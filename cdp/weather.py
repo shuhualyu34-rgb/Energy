@@ -2,8 +2,12 @@
 
 import argparse
 from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 from pathlib import Path
+from time import monotonic, sleep
 from typing import Annotated, Literal
+from urllib.error import HTTPError
+from urllib.request import urlopen
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
@@ -86,11 +90,58 @@ def forecasts_as_of(store: Store, cutoff: str, target: str) -> dict[str, dict]:
     } for row in rows}
 
 
+def fetch_forecast(url: str, *, retry_budget: int = 900) -> bytes:
+    """Fetch a forecast, backing off on HTTP 429 within the retry window."""
+    deadline = monotonic() + retry_budget
+    delay = 5
+    while True:
+        try:
+            with urlopen(url, timeout=10) as response:
+                raw = response.read(65537)
+                if len(raw) > 65536:
+                    raise ValueError("weather forecast response exceeds 64 KiB")
+                return raw
+        except HTTPError as error:
+            with error:
+                if error.code != 429:
+                    raise
+                retry_after = error.headers.get("Retry-After", "").strip()
+            wait = max(delay, retry_after_seconds(retry_after))
+            if wait > deadline - monotonic():
+                raise ValueError("weather forecast rate limit exceeded retry budget") from None
+            sleep(wait)
+            delay = min(delay * 2, 60)
+
+
+def retry_after_seconds(value: str) -> float:
+    if value.isascii() and value.isdecimal():
+        return float(value)
+    if value:
+        try:
+            retry_at = parsedate_to_datetime(value)
+            if retry_at.tzinfo is not None:
+                return max(0, (retry_at - datetime.now(timezone.utc)).total_seconds())
+        except (ValueError, OverflowError):
+            pass
+    return 0
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("files", nargs="+", type=Path)
+    parser.add_argument("files", nargs="*", type=Path)
+    parser.add_argument("--url", help="HTTP(S) URL serving one forecast snapshot")
     args = parser.parse_args()
+    if bool(args.files) == bool(args.url):
+        parser.error("provide forecast files or --url")
+    if args.url and not args.url.startswith(("http://", "https://")):
+        parser.error("--url must use HTTP or HTTPS")
     store = configured_store()
+    if args.url:
+        try:
+            print(ingest_forecast(store, fetch_forecast(args.url)))
+        except (OSError, ValueError) as error:
+            parser.exit(1, f"{error}\n")
+        return
     for file in args.files:
         try:
             print(ingest_forecast(store, file.read_bytes()))

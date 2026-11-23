@@ -37,7 +37,7 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(title="CDP-1 开发沙箱", version="0.31.0", lifespan=lifespan)
+app = FastAPI(title="CDP-1 开发沙箱", version="0.40.0", lifespan=lifespan)
 app.middleware("http")(enforce_dashboard_access)
 
 

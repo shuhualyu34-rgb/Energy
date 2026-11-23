@@ -9,7 +9,7 @@ services:
       db-access-init:
         condition: service_completed_successfully
   db-access-init:
-    image: cdp1:0.31.0-dev
+    image: cdp1:0.40.0-dev
     command: ["python", "-m", "cdp.db_access"]
     environment:
       CDP_POSTGRES_DSN: postgresql://cdp:cdp-local-only@postgres:5432/cdp

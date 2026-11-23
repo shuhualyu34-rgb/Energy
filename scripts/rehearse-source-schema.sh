@@ -2,6 +2,74 @@
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
+if [[ "${1:-}" == "--local" && $# -eq 1 ]]; then
+    python -E - <<'PYTHON'
+import json
+import sqlite3
+from contextlib import closing
+from datetime import datetime, timedelta
+from pathlib import Path
+from tempfile import TemporaryDirectory
+
+from cdp.billing_ledger import billing_history
+from cdp.collect import BILLING_V1, collect
+from cdp.collection_quality import CollectionRejected, collection_quality
+from cdp.collection_state import export_state
+from cdp.metrics import metrics_text
+from cdp.store import Store
+
+cutoff = datetime.fromisoformat("2026-01-14T16:31:00+00:00")
+order_id = "ORD_20260115_SH001_0001"
+source_id = "schema-rehearsal"
+
+with TemporaryDirectory() as directory:
+    root = Path(directory)
+    source = root / "fixture.sqlite"
+    with closing(sqlite3.connect(source)) as db, db:
+        db.executescript(Path("samples/billing-v1-demo.sql").read_text())
+        original = db.execute("SELECT payload FROM billing_v1_event WHERE version = 2").fetchone()[0]
+        changed = json.loads(original)
+        changed["pay_amount"] = changed.pop("total_amount_cents")
+        db.execute("UPDATE billing_v1_event SET payload = ? WHERE version = 2", (json.dumps(changed),))
+
+    store = Store(root / "platform")
+    options = {"source_format": BILLING_V1, "page_size": 1}
+    collect(source, store, source_id, cutoff - timedelta(minutes=1), **options)
+    before = export_state(store.directory)
+    try:
+        collect(source, store, source_id, cutoff, **options)
+    except CollectionRejected as error:
+        assert error.code == "contract_validation", error.code
+    else:
+        raise AssertionError("schema change did not block collection")
+
+    assert export_state(store.directory) == before
+    row, = collection_quality(store)
+    assert (row["status"], row["failure_code"]) == ("blocked", "contract_validation"), row
+    assert "cdp_collection_quality_blocked_sources 1" in metrics_text(store).splitlines()
+    assert [row["version"] for row in billing_history(store, order_id)] == [1]
+
+    with closing(sqlite3.connect(source)) as db, db:
+        db.execute("UPDATE billing_v1_event SET payload = ? WHERE version = 2", (original,))
+    report = collect(source, Store(store.directory), source_id, cutoff, **options)
+    assert report["outcomes"] == {"duplicate": 1, "updated": 1}, report
+    assert export_state(store.directory).snapshot.checkpoints[0].through_utc == report["through_utc"]
+    row, = collection_quality(store)
+    assert (row["status"], row["failure_code"]) == ("ok", None), row
+    assert "cdp_collection_quality_blocked_sources 0" in metrics_text(store).splitlines()
+    history = billing_history(store, order_id)
+    assert [row["status"] for row in history] == ["COMPLETED", "REFUNDED"]
+    assert history[-1]["snapshot"]["total_amount_cents"] == json.loads(original)["total_amount_cents"]
+    print("S4: renamed field blocked collection, preserved the checkpoint and raised the quality metric.")
+    print("After repair: one duplicate suppressed, one version recovered, original amount verified, metric cleared.")
+PYTHON
+    exit
+fi
+if (( $# != 0 )); then
+    printf 'Usage: %s [--local]\n' "${0##*/}" >&2
+    exit 2
+fi
+
 work_dir=$(mktemp -d /tmp/cdp-schema-rehearsal.XXXXXXXX)
 project="cdp-schema-${work_dir##*.}"
 project=${project,,}

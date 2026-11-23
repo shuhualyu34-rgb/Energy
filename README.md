@@ -1,6 +1,6 @@
 # CDP-1 充电数据智能平台
 
-`0.31.0-dev` 是面向合成数据的开发沙箱。它演示一笔订单如何经过契约校验、ODS 原始归档、DWD 版本化入账，再由 FastAPI 返回站点日指标。技术分工和生产演进见 [架构基线](docs/architecture.md)。
+`0.40.0-dev` 是面向合成数据的开发沙箱。它演示一笔订单如何经过契约校验、ODS 原始归档、DWD 版本化入账，再由 FastAPI 返回站点日指标。技术分工和生产演进见 [架构基线](docs/architecture.md)。
 
 ## 启动与回放
 
@@ -20,11 +20,46 @@ docker compose exec -T api python - < tests/test_orders.py
 如果构建机的 HTTPS 代理使用企业 CA，可将已受信的 CA 证书包临时传给 BuildKit。云环境使用以下命令。
 
 ```sh
-docker build --secret id=build_ca,src=/etc/ssl/certs/ca-certificates.crt -t cdp1:0.31.0-dev .
+docker build --secret id=build_ca,src=/etc/ssl/certs/ca-certificates.crt -t cdp1:0.40.0-dev .
 docker compose up --no-build --detach --wait
 ```
 
 复制 `.env.example` 为 `.env` 可修改本地访问端口 `CDP_PORT`。Compose 仅在宿主机回环地址发布端口。应用容器以 UID 10001 运行，`CDP_DATA_DIR=/data` 指向命名卷。使用 `docker compose down` 停止环境并保留数据卷。此服务使用无鉴权的演示接口，输入限合成样本。
+
+### 合成订单跨日对账与三次回放
+
+在已安装项目依赖的开发环境中运行：
+
+```bash
+bash scripts/rehearse-batch-reconciliation.sh
+```
+
+脚本用临时 SQLite 库验证上海午夜前后的订单归日、金额修订、重复和旧版本投递。对账以固定样例为基准，也验证金额不符时返回退出码 2。随后导出已提交的订单快照，分别导入三个空库，逐日比对对账结果。此演练覆盖 0.1 演示订单及其站点日报，运行结束会清理临时数据。
+
+### S7 24 个月全量回放演练
+
+在已安装依赖的开发环境运行 `bash scripts/rehearse-full-replay.sh`。脚本为 2024 年 1 月至 2025 年 12 月的每个上海业务日生成两个站点的演示订单，校验导出的原始文件摘要，再按三种顺序导入三个空库。每轮额外完整重投一次，逐日与固定口径对账，并比对日报 SHA-256。演练使用临时 SQLite，覆盖 0.1 演示订单的批量重放一致性。
+
+## 合成数据沙箱验收
+
+在已安装 Pydantic 2 的 Linux 开发环境运行：
+
+```bash
+bash scripts/rehearse-sandbox-acceptance.sh
+```
+
+入口按六组脚本执行 S1–S8，逐组汇总通过和失败结果。单组失败后会继续执行其余脚本，最终以非零状态退出。演练使用临时 SQLite、合成订单与模拟 HTTP，无需 PostgreSQL 驱动或新容器。若云盘空间不足且 Linux 提供可写的 `/dev/shm`，可在命令前加 `TMPDIR=/dev/shm`。
+
+| 场景 | 沙箱验证 |
+| --- | --- |
+| S1、S2、S8 | 重复事件去重、迟到归窗与幂等回填、异常设备时间隔离 |
+| S3 | 第 50 笔提交后强制终止，核验检查点与恢复对账 |
+| S4 | 金额字段改名触发契约阻断及质量指标，修复后补采 |
+| S5 | V1 退款后重放旧版本，核验拒绝计数、历史与归档 |
+| S6 | 模拟 HTTP 429，验证退避、恢复与去重 |
+| S7 | 24 个月合成历史三次回放，核对日报摘要 |
+
+预生产验收还包括 PostgreSQL、Kafka、Spark 联合部署，Prometheus 告警时效，第 5 万行中断和真实规模回放。
 
 ## PostgreSQL 沙箱
 
@@ -73,6 +108,10 @@ docker compose exec -T api python -m cdp.collect /data/billing-demo.sqlite3 \
   --backfill-from 2026-01-14T16:00:00+00:00 --through 2026-01-14T17:00:00+00:00
 ```
 
+### S3 采集中断恢复演练
+
+在 Linux 开发环境运行 `bash scripts/rehearse-collector-crash.sh`。脚本生成 120 笔合成订单，在采集子进程提交第 50 笔后发送 SIGKILL。重启后验证检查点从上一次成功位置续跑、已提交订单去重、遗漏订单补齐、归档可读，且日报订单数、电量、电费和服务费与固定参考一致。本演练使用临时 SQLite，预生产第 5 万行中断场景仍需单独验证。
+
 ## V1 订单历史
 
 开发环境可写入合成 V1 事件，并检查已接收的订单版本和对应分时明细。
@@ -83,6 +122,10 @@ docker compose exec -T api python -m cdp.billing_ledger --history ORD_20260115_S
 ```
 
 版本历史与当前快照一起提交。已迁移的旧快照以 `null` 标记未知分时明细，后续版本保留源端提供并通过勾稽校验的分时数据。退款业务日和冲减金额待确认，V1 查询限开发明细。
+
+### S5 旧版本重放演练
+
+在已安装依赖的开发环境运行 `bash scripts/rehearse-version-rollback.sh`。脚本从合成 V1 计费源采集完成版与退款版，再用晚两小时的截止时间回填同一批事件。回填报告须记录一笔旧版本和一笔重复投递。演练同时核对当前退款状态、版本历史和归档快照。使用临时 SQLite 库和模拟截止时间，可在几秒内完成。
 
 ### 从 V1 合成源增量采集
 
@@ -135,12 +178,16 @@ docker compose -p cdp-event -f compose.yaml -f compose.postgres.yaml -f compose.
 
 回填只纳入该日已登记且尚未应用的迟到事件，重复执行不增加计数。升级前的事件只有窗口起点可作水位初值，后续接到新事件后使用精确结束时间。该沙箱采用一条共享水位，并串行提交水位与事件路由。
 
+### 重复投递、迟到归窗与时钟漂移演练
+
+在已安装依赖的开发环境运行 `bash scripts/rehearse-stream-acceptance.sh`。脚本在临时 SQLite 库执行项目书 S1、S2 的流处理逻辑，检查 100 次重复投递后窗口计数仍为 1、恰好迟到两小时仍归入 5 分钟窗口、未来时间戳不推进水位，以及迟到三小时的事件只回填一次。退款版本在生命周期窗口单独计数。 S8 另用空库验证设备时间跳快 24 小时后，隔离表只记录一次，流进度保持不变，随后到达的正常事件仍能归窗。预生产验收还需在 Kafka、Spark 和 PostgreSQL 部署上验证传输、调度及财务对账。
+
 ### Spark Structured Streaming
 
 Spark 4.2.0 作业可接管开发沙箱的 Kafka 读取，并复用 PostgreSQL 中的去重、水位、隔离和窗口状态。默认部署使用小批次读取和本地双线程。开发镜像在构建时校验 Kafka 连接器及依赖的 SHA-256。
 
 ```sh
-docker build --secret id=build_ca,src=/etc/ssl/certs/ca-certificates.crt -t cdp1:0.31.0-dev .
+docker build --secret id=build_ca,src=/etc/ssl/certs/ca-certificates.crt -t cdp1:0.40.0-dev .
 docker build --target spark --secret id=build_ca,src=/etc/ssl/certs/ca-certificates.crt -t cdp1:0.24.0-spark-dev .
 export CDP_PORT=8004
 dc() { docker compose -p cdp-spark -f compose.yaml -f compose.postgres.yaml -f compose.kafka.yaml -f compose.spark.yaml "$@"; }
@@ -182,6 +229,8 @@ bash scripts/rehearse-spark-recovery.sh
 
 ### 计费源字段变更演练
 
+运行 `bash scripts/rehearse-source-schema.sh --local` 可用临时 SQLite 验证 S4。脚本改名 V1 退款快照的金额字段，核对采集阻断、既有检查点和质量指标，再恢复字段并重采，验证金额、去重和指标恢复。完整 Compose 演练另测 Prometheus 告警触发和解除。
+
 增量采集拒绝不合法的 V1 记录并保留检查点。质量状态写入目标库，记录来源标识、检查时间和失败类型；原始载荷及字段值不进入质量状态。通过 `/v1/demo/collection-quality` 查询受阻来源。Prometheus 在持续受阻 1 分钟后触发 `CdpCollectionQualityBlocked`；修复数据后，下次成功的增量任务会清除受阻状态。手动回填不会改写增量状态。
 
 构建当前 API 和 Prometheus 镜像后，可执行完整演练。脚本创建并清理独立测试环境，用合成样本验证字段改名、告警触发、修复重跑和告警消退。
@@ -211,6 +260,10 @@ docker compose exec -T api python -m cdp.features --as-of 2026-11-23T09:30:00+08
 在 API 容器里使用 `python -m cdp.weather /path/to/forecast.json` 导入离线预报快照。文件包含 `kind: "forecast"`、`station_id`、UTC 的 `issued_at` 和 `valid_at`、整数 `temperature_centi_c` 与 `precipitation_micrometers`。例如 18.50°C 写作 1850，0.8 mm 写作 800。目标时间必须是 UTC 整点，且晚于发布时间。
 
 `python -m cdp.features --as-of <带时区的时间> --with-weather` 在现有订单特征中附加指向下一个 UTC 整点的天气。每站选用在切点前发布且入库可用的最新预报。缺少可用预报时 `weather` 为 `null`，实况样本会被拒绝。当前离线契约用于合成演练，实际天气源、站点映射和商业授权另行确认。
+
+### S6 气象接口限流演练
+
+`python -m cdp.weather --url URL` 从 HTTP(S) 拉取单条气象快照。收到 HTTP 429 时指数退避并遵守 `Retry-After`，重试预算为 15 分钟。运行 `bash scripts/rehearse-rate-limit.sh` 可模拟上游限流 10 分钟后恢复，验证只入库一次和超预算退出。此演练使用模拟时钟和临时 SQLite。
 
 ## 下一 24 小时充电量基线
 

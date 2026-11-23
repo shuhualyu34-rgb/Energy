@@ -16,7 +16,7 @@
 | 层 | 已运行的开发基线 | 生产技术基线 |
 | --- | --- | --- |
 | 语言与 API | Python 3.11、SQL、Pydantic 2、FastAPI、Uvicorn | 继续用 Python 和 SQL，API 接入内部身份、权限及查询审计 |
-| 运行与镜像 | Compose v2 单机，`cdp1:0.31.0-dev`，固定 Debian Bookworm 基础镜像 digest，Python 依赖锁定版本及哈希 | API、采集与计算独立容器，企业镜像仓库保存按版本构建的镜像摘要，生产部署按运维平台冻结 |
+| 运行与镜像 | Compose v2 单机，`cdp1:0.40.0-dev`，固定 Debian Bookworm 基础镜像 digest，Python 依赖锁定版本及哈希 | API、采集与计算独立容器，企业镜像仓库保存按版本构建的镜像摘要，生产部署按运维平台冻结 |
 | 数据与原始层 | SQLite 默认后端，PostgreSQL 16 可选沙箱并自动迁移；命名卷持久化本地原始 JSON 与明细库 | PostgreSQL 16 主备及 WAL 归档，S3 兼容对象存储；遥测按日分区 |
 | 采集与批处理 | 文件导入、合成计费源只读增量轮询、断点重跑、归档快照导出与日对账 | Python/httpx、SQL/Pandas，Airflow 编排并回填；优先评估 MySQL CDC |
 | 事件与流计算 | 本迭代用合成订单验证版本语义 | Kafka 4.2+ KRaft、Spark Structured Streaming 4.x，按部署冻结日验证发行版、JDK、Kafka connector 和镜像兼容性 |
