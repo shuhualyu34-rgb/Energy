@@ -1,0 +1,23 @@
+services:
+  api:
+    environment:
+      CDP_POSTGRES_DSN: postgresql://cdp:cdp-local-only@postgres:5432/cdp
+    depends_on:
+      postgres:
+        condition: service_healthy
+  postgres:
+    image: postgres:16-bookworm@sha256:ce3efec6bc404f6b15ebf5d9bed6b45a9d4655aea238d7dacc3467ccb05a1175
+    environment:
+      POSTGRES_DB: cdp
+      POSTGRES_USER: cdp
+      POSTGRES_PASSWORD: cdp-local-only
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "cdp", "-d", "cdp"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  postgres-data:

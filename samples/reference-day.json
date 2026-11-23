@@ -1,0 +1,12 @@
+{
+  "business_day": "2026-01-15",
+  "rows": [
+    {
+      "station_id": "demo-station-001",
+      "order_count": 1,
+      "energy_wh": 10000,
+      "electricity_fee_cents": 800,
+      "service_fee_cents": 300
+    }
+  ]
+}

@@ -1,0 +1,31 @@
+groups:
+  - name: cdp-sandbox
+    rules:
+      - alert: CdpMetricsUnavailable
+        expr: up{job="cdp-api"} == 0
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "CDP metrics are unavailable"
+      - alert: CdpKafkaBacklog
+        expr: cdp_kafka_pending_events{job="cdp-api"} > 0
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "CDP billing events are awaiting Kafka publication"
+      - alert: CdpLateBackfillPending
+        expr: cdp_stream_late_pending_events{job="cdp-api"} > 0
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "CDP billing events are awaiting late backfill"
+      - alert: CdpCollectionQualityBlocked
+        expr: cdp_collection_quality_blocked_sources{job="cdp-api"} > 0
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "CDP incremental billing collection is blocked by source data quality"

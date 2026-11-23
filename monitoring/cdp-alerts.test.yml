@@ -1,0 +1,59 @@
+rule_files:
+  - cdp-alerts.yml
+evaluation_interval: 15s
+tests:
+  - interval: 15s
+    input_series:
+      - series: 'up{job="cdp-api"}'
+        values: '0+0x64'
+      - series: 'cdp_kafka_pending_events{job="cdp-api"}'
+        values: '1+0x64'
+      - series: 'cdp_stream_late_pending_events{job="cdp-api"}'
+        values: '2+0x64'
+      - series: 'cdp_collection_quality_blocked_sources{job="cdp-api"}'
+        values: '1+0x4 0+0x59'
+    alert_rule_test:
+      - eval_time: 30s
+        alertname: CdpCollectionQualityBlocked
+        exp_alerts: []
+      - eval_time: 1m
+        alertname: CdpCollectionQualityBlocked
+        exp_alerts:
+          - exp_labels:
+              job: cdp-api
+              severity: warning
+            exp_annotations:
+              summary: CDP incremental billing collection is blocked by source data quality
+      - eval_time: 1m15s
+        alertname: CdpCollectionQualityBlocked
+        exp_alerts: []
+      - eval_time: 30s
+        alertname: CdpMetricsUnavailable
+        exp_alerts: []
+      - eval_time: 1m
+        alertname: CdpMetricsUnavailable
+        exp_alerts:
+          - exp_labels:
+              job: cdp-api
+              severity: warning
+            exp_annotations:
+              summary: CDP metrics are unavailable
+      - eval_time: 14m
+        alertname: CdpKafkaBacklog
+        exp_alerts: []
+      - eval_time: 15m
+        alertname: CdpKafkaBacklog
+        exp_alerts:
+          - exp_labels:
+              job: cdp-api
+              severity: warning
+            exp_annotations:
+              summary: CDP billing events are awaiting Kafka publication
+      - eval_time: 15m
+        alertname: CdpLateBackfillPending
+        exp_alerts:
+          - exp_labels:
+              job: cdp-api
+              severity: warning
+            exp_annotations:
+              summary: CDP billing events are awaiting late backfill

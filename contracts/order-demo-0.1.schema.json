@@ -1,0 +1,68 @@
+{
+  "additionalProperties": false,
+  "description": "Versioned, synthetic completed-order snapshot.",
+  "properties": {
+    "schema_version": {
+      "const": "0.1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "order_id": {
+      "pattern": "^[A-Za-z0-9_-]{1,64}$",
+      "title": "Order Id",
+      "type": "string"
+    },
+    "station_id": {
+      "pattern": "^[A-Za-z0-9_-]{1,64}$",
+      "title": "Station Id",
+      "type": "string"
+    },
+    "version": {
+      "exclusiveMinimum": 0,
+      "maximum": 9007199254740991,
+      "title": "Version",
+      "type": "integer"
+    },
+    "started_at": {
+      "format": "date-time",
+      "title": "Started At",
+      "type": "string"
+    },
+    "ended_at": {
+      "format": "date-time",
+      "title": "Ended At",
+      "type": "string"
+    },
+    "energy_wh": {
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "title": "Energy Wh",
+      "type": "integer"
+    },
+    "electricity_fee_cents": {
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "title": "Electricity Fee Cents",
+      "type": "integer"
+    },
+    "service_fee_cents": {
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "title": "Service Fee Cents",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "schema_version",
+    "order_id",
+    "station_id",
+    "version",
+    "started_at",
+    "ended_at",
+    "energy_wh",
+    "electricity_fee_cents",
+    "service_fee_cents"
+  ],
+  "title": "Order",
+  "type": "object"
+}

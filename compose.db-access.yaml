@@ -1,0 +1,21 @@
+services:
+  api:
+    environment:
+      CDP_POSTGRES_DSN: ""
+      CDP_API_POSTGRES_DSN: postgresql://cdp_api_reader:cdp-reader-local-only@postgres:5432/cdp
+    volumes:
+      - cdp-data:/data:ro
+    depends_on:
+      db-access-init:
+        condition: service_completed_successfully
+  db-access-init:
+    image: cdp1:0.31.0-dev
+    command: ["python", "-m", "cdp.db_access"]
+    environment:
+      CDP_POSTGRES_DSN: postgresql://cdp:cdp-local-only@postgres:5432/cdp
+      CDP_DEV_READER_PASSWORD: cdp-reader-local-only
+    volumes:
+      - cdp-data:/data
+    depends_on:
+      postgres:
+        condition: service_healthy

@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>充电运营驾驶舱 · CDP-1</title>
+  <link rel="stylesheet" href="/dashboard/assets/dashboard.css">
+  <script defer src="/dashboard/assets/dashboard.js"></script>
+</head>
+<body>
+  <header class="masthead">
+    <div class="shell topbar">
+      <a class="brand" href="/dashboard"><span class="brand-mark" aria-hidden="true">ϟ</span> CDP-1</a>
+      <nav aria-label="驾驶舱导航"><a href="#report">站点日报</a><a href="#forecast">电量预测</a><a href="#stream">实时链路</a><a href="#quality">采集质量</a></nav>
+      <span class="environment">开发沙箱</span>
+    </div>
+  </header>
+  <main class="shell">
+    <section class="intro" aria-labelledby="title">
+      <div><h1 id="title">充电运营驾驶舱</h1><p>按上海业务日查看站点日报和订单生命周期事件。</p></div>
+      <form id="filters">
+        <label for="day">业务日 · Asia/Shanghai</label>
+        <div class="controls"><input type="date" id="day" required value="2026-01-15"><button type="submit">刷新数据</button></div>
+      </form>
+    </section>
+
+    <p id="load-status" class="load-status" role="status">正在读取数据…</p>
+    <section id="report" aria-labelledby="report-title">
+      <h2 id="report-title">站点日报</h2>
+      <div class="kpis">
+        <article><span>订单数</span><div id="orders">—</div><small>单</small></article>
+        <article><span>充电电量</span><div id="energy">—</div><small>kWh</small></article>
+        <article><span>电费</span><div id="electricity">—</div><small>元</small></article>
+        <article><span>服务费</span><div id="service">—</div><small>元</small></article>
+      </div>
+      <div class="panel table-panel">
+        <table><caption class="sr-only">站点日指标</caption><thead><tr><th scope="col">站点</th><th scope="col">订单</th><th scope="col">电量（kWh）</th><th scope="col">电费（元）</th><th scope="col">服务费（元）</th></tr></thead><tbody id="station-rows"></tbody></table>
+        <p id="report-state" class="empty"></p>
+      </div>
+    </section>
+
+    <section id="forecast" class="panel forecast-panel" aria-labelledby="forecast-title">
+      <div class="panel-header">
+        <div><h2 id="forecast-title">未来 24 小时电量预测</h2><p id="forecast-window"></p></div>
+        <div class="forecast-total"><strong id="forecast-total">—</strong><span>kWh</span></div>
+      </div>
+      <p id="forecast-state" class="empty"></p>
+      <table id="forecast-table" hidden>
+        <caption class="sr-only">分站点预测电量</caption>
+        <thead><tr><th scope="col">站点</th><th scope="col">预测电量（kWh）</th></tr></thead>
+        <tbody id="forecast-rows"></tbody>
+      </table>
+    </section>
+
+    <div class="lower">
+      <section id="stream" class="panel stream-panel" aria-labelledby="stream-title">
+        <div class="panel-header"><div><h2 id="stream-title">生命周期事件</h2><p>5 分钟窗口汇总至小时 · 上海时间</p></div><strong id="event-count" aria-label="事件数">—</strong></div>
+        <p id="stream-state" class="empty"></p>
+        <div id="chart" class="chart" aria-label="按小时的生命周期事件柱状图"></div>
+        <div class="axis" aria-hidden="true"><span>00:00</span><span>06:00</span><span>12:00</span><span>18:00</span><span>23:00</span></div>
+        <ul id="legend" class="legend" aria-label="各状态事件总数"></ul>
+      </section>
+      <section id="quality" class="panel quality-panel" aria-labelledby="quality-title">
+        <div class="panel-header"><div><h2 id="quality-title">采集质量</h2><p>各来源最近一次契约检查</p></div></div>
+        <p id="quality-state" class="empty"></p>
+        <ul id="source-rows" class="sources"></ul>
+      </section>
+    </div>
+  </main>
+</body>
+</html>

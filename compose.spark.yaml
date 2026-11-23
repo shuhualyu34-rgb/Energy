@@ -1,0 +1,30 @@
+x-spark: &spark-job
+  image: cdp1:0.24.0-spark-dev
+  build:
+    context: .
+    target: spark
+  environment:
+    CDP_KAFKA_BOOTSTRAP: kafka:9092
+    CDP_POSTGRES_DSN: ${CDP_SPARK_POSTGRES_DSN:-postgresql://cdp:cdp-local-only@postgres:5432/cdp}
+    CDP_SPARK_CHECKPOINT: /data/billing-stream-v1
+  volumes:
+    - spark-checkpoints:/data
+
+services:
+  spark:
+    <<: *spark-job
+    profiles: [spark]
+  spark-worker:
+    <<: *spark-job
+    profiles: [pipeline]
+    command: ["--follow"]
+    depends_on:
+      api:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    stop_grace_period: 30s
+
+volumes:
+  spark-checkpoints:

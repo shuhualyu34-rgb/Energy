@@ -1,0 +1,193 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ChargingBillingOrderEvent",
+  "description": "充电智能平台 (CDP-1) 计费源脱敏订单契约规范 V1.0",
+  "type": "object",
+  "required": [
+    "order_id",
+    "station_id",
+    "gun_id",
+    "user_id_hmac",
+    "start_time",
+    "end_time",
+    "updated_at",
+    "status",
+    "version",
+    "total_kwh",
+    "total_amount_cents",
+    "elec_fee_cents",
+    "service_fee_cents"
+  ],
+  "properties": {
+    "order_id": {
+      "type": "string",
+      "description": "订单业务唯一主键 (Primary Key)",
+      "pattern": "^ORD_[0-9]{8}_[A-Z0-9]+_[0-9]{4,}$"
+    },
+    "station_id": {
+      "type": "string",
+      "description": "站点主数据唯一编码 (Foreign Key to dim_stations)",
+      "pattern": "^ST_[A-Z]{2}_[0-9]{3,}$"
+    },
+    "gun_id": {
+      "type": "string",
+      "description": "充电枪物理编码 (Foreign Key to dim_guns)",
+      "pattern": "^GUN_[A-Z0-9]+_[0-9]{2}[A-Z]$"
+    },
+    "user_id_hmac": {
+      "type": "string",
+      "description": "用户标识 (经 HMAC-SHA256 加盐脱敏后的 64 位十六进制散列值)",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "plate_num_hmac": {
+      "type": "string",
+      "description": "车牌/VIN码 (经 HMAC-SHA256 加盐脱敏后的 64 位十六进制散列值)",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "car_type": {
+      "type": "string",
+      "enum": [
+        "BEV_PASSENGER",
+        "TAXI_FLEET",
+        "HEAVY_TRUCK",
+        "BUS",
+        "UNKNOWN"
+      ]
+    },
+    "start_time": {
+      "type": "string",
+      "format": "date-time",
+      "description": "充电实际开始时间戳 (UTC ISO-8601)"
+    },
+    "end_time": {
+      "type": "string",
+      "format": "date-time",
+      "description": "充电实际结束时间戳 (UTC ISO-8601)"
+    },
+    "event_time": {
+      "type": "string",
+      "format": "date-time",
+      "description": "事件业务时间戳 (通常等于 end_time，UTC ISO-8601)"
+    },
+    "updated_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "计费源状态或金额更新时间戳 (UTC ISO-8601，增量抽取与 CDC 水位线)"
+    },
+    "status": {
+      "type": "string",
+      "description": "订单状态机枚举值",
+      "enum": [
+        "CHARGING",
+        "COMPLETED",
+        "ABNORMAL_CLOSED",
+        "REFUNDED"
+      ]
+    },
+    "version": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "乐观锁递增版本号，状态/金额变更触发 +1"
+    },
+    "soc_start": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 100
+    },
+    "soc_end": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 100
+    },
+    "total_kwh": {
+      "type": "number",
+      "minimum": 0.0,
+      "description": "总充电电量 (度/kWh)"
+    },
+    "total_amount_cents": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "总实付金额 (分，BIGINT 存储)"
+    },
+    "elec_fee_cents": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "基础电费金额 (分，BIGINT 存储，代收代缴)"
+    },
+    "service_fee_cents": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "充电服务费金额 (分，BIGINT 存储，主营毛利)"
+    },
+    "penalty_fee_cents": {
+      "type": "integer",
+      "minimum": 0,
+      "default": 0,
+      "description": "超时占位费金额 (分，BIGINT 存储)"
+    },
+    "discount_amount_cents": {
+      "type": "integer",
+      "minimum": 0,
+      "default": 0,
+      "description": "优惠券与会员抵扣金额 (分，BIGINT 存储)"
+    },
+    "currency": {
+      "type": "string",
+      "default": "CNY"
+    },
+    "tou_slices": {
+      "type": "array",
+      "description": "分时时段明细 (支持跨峰平谷切分)",
+      "items": {
+        "type": "object",
+        "required": [
+          "tou_type",
+          "start_time",
+          "end_time",
+          "kwh",
+          "elec_fee_cents",
+          "service_fee_cents"
+        ],
+        "properties": {
+          "tou_type": {
+            "type": "string",
+            "enum": [
+              "SHARP",
+              "PEAK",
+              "FLAT",
+              "VALLEY"
+            ]
+          },
+          "start_time": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "end_time": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "kwh": {
+            "type": "number",
+            "minimum": 0.0
+          },
+          "elec_rate_cents": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "service_rate_cents": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "elec_fee_cents": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "service_fee_cents": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      }
+    }
+  }
+}

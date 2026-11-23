@@ -1,0 +1,4 @@
+services:
+  api:
+    environment:
+      CDP_DASHBOARD_USERS_JSON: ${CDP_DASHBOARD_USERS_JSON:?Set the dashboard token verifier map}

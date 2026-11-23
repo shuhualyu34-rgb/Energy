@@ -1,0 +1,6 @@
+fastapi==0.119.1
+uvicorn==0.38.0
+psycopg[binary]>=3.2,<4
+jsonschema>=4.23,<5
+kafka-python>=2.3,<3
+boto3>=1.40,<2

@@ -1,0 +1,9 @@
+{
+  "identities": [
+    {
+      "name": "cdp-dev",
+      "credentials": [{"accessKey": "cdp-dev", "secretKey": "cdp-dev-archive-only"}],
+      "actions": ["Admin", "Read", "Write", "List"]
+    }
+  ]
+}

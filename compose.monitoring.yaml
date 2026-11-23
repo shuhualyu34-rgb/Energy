@@ -1,0 +1,16 @@
+services:
+  prometheus:
+    image: cdp1:0.18.0-prometheus-dev
+    build:
+      context: .
+      dockerfile: docker/prometheus.Dockerfile
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${CDP_PROMETHEUS_PORT:-9095}:9090"
+    volumes:
+      - prometheus-data:/prometheus
+
+volumes:
+  prometheus-data:

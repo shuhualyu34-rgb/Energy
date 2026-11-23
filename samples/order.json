@@ -1,0 +1,11 @@
+{
+  "schema_version": "0.1",
+  "order_id": "demo-order-001",
+  "station_id": "demo-station-001",
+  "version": 1,
+  "started_at": "2026-01-14T23:50:00+08:00",
+  "ended_at": "2026-01-15T00:30:00+08:00",
+  "energy_wh": 10000,
+  "electricity_fee_cents": 800,
+  "service_fee_cents": 300
+}

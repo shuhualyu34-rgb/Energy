@@ -1,0 +1,19 @@
+services:
+  pipeline:
+    image: cdp1:0.31.0-dev
+    profiles: [pipeline]
+    command: ["python", "-m", "cdp.pipeline", "--follow", "--interval", "${CDP_PIPELINE_INTERVAL_SECONDS:-60}"]
+    environment:
+      CDP_POSTGRES_DSN: ${CDP_PIPELINE_POSTGRES_DSN:-postgresql://cdp:cdp-local-only@postgres:5432/cdp}
+      CDP_KAFKA_BOOTSTRAP: kafka:9092
+      CDP_BILLING_SOURCE: /data/billing-v1-pipeline.sqlite3
+      CDP_BILLING_SOURCE_ID: billing-pipeline
+    depends_on:
+      api:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+    volumes:
+      - cdp-data:/data
+    restart: unless-stopped
+    stop_grace_period: 1m
