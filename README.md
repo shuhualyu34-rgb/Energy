@@ -56,7 +56,7 @@ bash scripts/rehearse-sandbox-acceptance.sh
 | S3 | 第 50 笔提交后强制终止，核验检查点与恢复对账 |
 | S4 | 金额字段改名触发契约阻断及质量指标，修复后补采 |
 | S5 | V1 退款后重放旧版本，核验拒绝计数、历史与归档 |
-| S6 | 模拟 HTTP 429，验证退避、恢复与去重 |
+| S6 | 本机 HTTP 服务返回 429，验证退避、恢复与去重 |
 | S7 | 24 个月合成历史三次回放，核对日报摘要 |
 
 预生产验收还包括 PostgreSQL、Kafka、Spark 联合部署，Prometheus 告警时效，第 5 万行中断和真实规模回放。可用下文的独立 S3 大样本命令，在合成 SQLite 环境先验证第 5 万行中断。
@@ -269,7 +269,7 @@ docker compose exec -T api python -m cdp.features --as-of 2026-11-23T09:30:00+08
 
 ### S6 气象接口限流演练
 
-`python -m cdp.weather --url URL` 从 HTTP(S) 拉取单条气象快照。收到 HTTP 429 时指数退避并遵守 `Retry-After`，重试预算为 15 分钟。运行 `bash scripts/rehearse-rate-limit.sh` 可模拟上游限流 10 分钟后恢复，验证只入库一次和超预算退出。此演练使用模拟时钟和临时 SQLite。
+`python -m cdp.weather --url URL` 从 HTTP(S) 拉取单条气象快照。收到 HTTP 429 时指数退避并遵守 `Retry-After`，重试预算为 15 分钟。运行 `bash scripts/rehearse-rate-limit.sh` 用本机 HTTP 服务复现 429 和 `Retry-After`。演练用模拟时钟推进 10 分钟限流，要求恢复后 15 分钟内落库，核验快照只入库一次，并验证持续限流时命令超预算退出且无写入。演练输出从恢复到落库的模拟耗时，使用临时 SQLite。
 
 ## 下一 24 小时充电量基线
 
