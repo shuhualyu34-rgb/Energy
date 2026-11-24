@@ -41,13 +41,18 @@ from kafka.admin import KafkaAdminClient
 
 from cdp.publish import kafka_sender
 
-bootstrap, topic, start, excluded = sys.argv[1:]
+seeds, topic, start, excluded = sys.argv[1:]
 start, excluded = int(start), int(excluded)
 expected_isr = {1, 2, 3} - {excluded}
+# A stopped Compose service has no DNS record; seed fresh clients from live brokers.
+nodes = [address for index, address in enumerate(seeds.split(","), start=1) if index != excluded]
+bootstrap = ",".join(nodes)
 batch_size = 10
 end = start + batch_size
 
-with closing(KafkaAdminClient(bootstrap_servers=bootstrap.split(","), request_timeout_ms=5000)) as admin:
+with closing(KafkaAdminClient(
+    bootstrap_servers=nodes, request_timeout_ms=5000, api_version_auto_timeout_ms=10000,
+)) as admin:
     deadline = monotonic() + 60
     while True:
         partition, = admin.describe_topics([topic])[0]["partitions"]
@@ -70,7 +75,7 @@ with kafka_sender(bootstrap, topic) as send:
 
 partition = TopicPartition(topic, 0)
 with closing(KafkaConsumer(
-    bootstrap_servers=bootstrap.split(","), group_id=None,
+    bootstrap_servers=nodes, group_id=None, api_version_auto_timeout_ms=10000,
     enable_auto_commit=False, consumer_timeout_ms=15000,
 )) as consumer:
     consumer.assign([partition])
