@@ -1,0 +1,33 @@
+services:
+  prometheus:
+    configs:
+      - source: s4_prometheus
+        target: /etc/prometheus/prometheus.yml
+  alertmanager:
+    image: prom/alertmanager:v0.28.1@sha256:27c475db5fb156cab31d5c18a4251ac7ed567746a2483ff264516437a39b15ba
+    command: [--config.file=/etc/alertmanager/alertmanager.yml, --storage.path=/alertmanager, --cluster.listen-address=]
+    configs:
+      - source: s4_alertmanager
+        target: /etc/alertmanager/alertmanager.yml
+    depends_on:
+      - receiver
+  receiver:
+    image: cdp1:0.40.0-dev
+    command: [python, /tmp/s4-receiver.py]
+    configs:
+      - source: s4_receiver
+        target: /tmp/s4-receiver.py
+    ports:
+      - "127.0.0.1::8080"
+    healthcheck:
+      test: ["CMD", "python", "-c", "from urllib.request import urlopen; urlopen('http://127.0.0.1:8080/receipts', timeout=2).close()"]
+      interval: 2s
+      timeout: 3s
+      retries: 10
+configs:
+  s4_prometheus:
+    file: ${CDP_S4_CONFIG_DIR:?Set the S4 config directory}/prometheus.yml
+  s4_alertmanager:
+    file: ${CDP_S4_CONFIG_DIR}/alertmanager.yml
+  s4_receiver:
+    file: ${CDP_S4_CONFIG_DIR}/receiver.py
