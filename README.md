@@ -304,6 +304,17 @@ dc logs --tail 20 pipeline spark-worker
 
 `spark-worker` 每五秒检查输入并复用持久 checkpoint。PostgreSQL 会话租约防止同一数据库与同一配置路径的两份作业同时运行。已有 worker 时，手动 Spark 使用同一 checkpoint 会被拒绝。需要切换到手动模式时，先运行 `dc --profile pipeline stop spark-worker`。服务设为 `unless-stopped`，数据库和 Kafka 就绪后才启动。可通过窗口 API 和 Spark 落库指标核实处理进度。
 
+
+### M3 联合链路时效演练
+
+构建 API 和 Spark 镜像后运行：
+
+```bash
+bash scripts/rehearse-pipeline-latency.sh
+```
+
+脚本启动独立的 PostgreSQL、Kafka、定时采集和 Spark 环境，分三轮写入 30 笔合成订单。从生成事件计时，每秒查询窗口 API，核对站点、状态、5 分钟事件时间窗口及计数，并报告可见时延的 P95 和最大值。脚本同时检查 Kafka 确认数和 Spark 实际落库数。演练默认将采集间隔设为 5 秒，可用 `CDP_PIPELINE_INTERVAL_SECONDS` 调整。该演练用于短时端到端验证，正式 M3 仍需在目标环境连续运行 72 小时。
+
 ### V1 入账归档核验
 
 新接受的 V1 历史版本将规范化事件快照保存在 `CDP_DATA_DIR/ods/billing-v1/<SHA-256>.json`，并在数据库内保存版本与摘要的关联。快照包含订单关键字段、状态、金额和分时明细。用户与车牌散列、原始载荷中的额外字段均不归档。归档先写入，历史和摘要关联随后在同一个数据库事务提交。
