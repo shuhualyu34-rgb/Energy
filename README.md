@@ -54,7 +54,7 @@ bash scripts/rehearse-full-replay.sh --large
 bash scripts/rehearse-sandbox-acceptance.sh
 ```
 
-入口按六组脚本执行 S1–S8，逐组汇总通过和失败结果。单组失败后会继续执行其余脚本，最终以非零状态退出。演练使用临时 SQLite、合成订单与模拟 HTTP，无需 PostgreSQL 驱动或新容器。若云盘空间不足且 Linux 提供可写的 `/dev/shm`，可在命令前加 `TMPDIR=/dev/shm`。
+入口按七组脚本执行 S1–S9，逐组汇总通过和失败结果。单组失败后会继续执行其余脚本，最终以非零状态退出。演练使用临时 SQLite、合成订单与模拟 HTTP，无需 PostgreSQL 驱动或新容器。若云盘空间不足且 Linux 提供可写的 `/dev/shm`，可在命令前加 `TMPDIR=/dev/shm`。
 
 | 场景 | 沙箱验证 |
 | --- | --- |
@@ -64,6 +64,7 @@ bash scripts/rehearse-sandbox-acceptance.sh
 | S5 | V1 退款后重放旧版本，核验拒绝计数、历史与归档 |
 | S6 | 本机 HTTP 服务返回 429，验证退避、恢复与去重 |
 | S7 | 24 个月合成历史三次回放，核对日报摘要 |
+| S9 | 跨峰谷订单的分段电量、两项费用、归档及一分钱差错阻断 |
 
 预生产验收还包括 PostgreSQL、Kafka、Spark 联合部署，Prometheus 告警时效，第 5 万行中断和真实规模回放。可用下文的独立 S3 大样本命令，在合成 SQLite 环境先验证第 5 万行中断。
 
@@ -138,6 +139,17 @@ docker compose exec -T api python -m cdp.billing_ledger --history ORD_20260115_S
 ### S5 旧版本重放演练
 
 在已安装依赖的开发环境运行 `bash scripts/rehearse-version-rollback.sh`。脚本从合成 V1 计费源采集完成版与退款版，再用晚两小时的截止时间回填同一批事件。回填报告须记录一笔旧版本和一笔重复投递。演练同时核对当前退款状态、版本历史和归档快照。使用临时 SQLite 库和模拟截止时间，可在几秒内完成。
+
+
+### S9 跨峰谷计费演练
+
+```bash
+bash scripts/rehearse-tou-billing.sh
+```
+
+演练为一笔上海时间 21:50–22:30 的合成订单提供 22:00 两侧的分段电量和整数演示费率。按分段电量核算 230 kWh、电费 198 元和服务费 81 元，再通过 V1 采集核对历史与归档。分段电费多一分钱的版本会触发契约阻断，检查点与已入账版本保持原样。重采原订单只记为重复。
+
+演示费率和分段电量由脚本提供。正式费率、分段电量来源和舍入规则应按项目书确认后，以实际结算样本验收。
 
 ### 从 V1 合成源增量采集
 

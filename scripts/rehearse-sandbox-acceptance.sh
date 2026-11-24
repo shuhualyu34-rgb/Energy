@@ -29,6 +29,7 @@ run_rehearsal S4 scripts/rehearse-source-schema.sh --local
 run_rehearsal S5 scripts/rehearse-version-rollback.sh
 run_rehearsal S6 scripts/rehearse-rate-limit.sh
 run_rehearsal S7 scripts/rehearse-full-replay.sh
+run_rehearsal S9 scripts/rehearse-tou-billing.sh
 
 printf '\nSynthetic sandbox acceptance summary\n'
 for entry in "${passed[@]}"; do
