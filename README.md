@@ -354,6 +354,17 @@ docker compose exec -T api python -m cdp.collection_state restore /path/collecti
 
 恢复拒绝校验失败、重复来源或与目标库不同的已有进度。对同一检查点重复恢复会报告当前已一致。恢复前应确认源标识和数据库快照属于同一批备份。
 
+
+### I2 PostgreSQL 主库切换与备份恢复
+
+```bash
+bash scripts/rehearse-postgres-primary-recovery.sh
+```
+
+脚本在独立 Compose 环境创建 PostgreSQL 16 主库、同步流复制备库和单独的恢复库，使用 `pg_verifybackup` 检查基础备份。在备份完成后再提交两笔合成订单，并强制切换 WAL 段，确认归档后终止主库。随后提升备库，同时保留基础备份和 WAL，供另一个空库独立恢复。两条路径都核对故障前已确认的订单键和金额，再提交并读取一笔新订单。
+
+演练分别报告从故障注入到备库可写、从开始恢复到恢复库可写的时间，以及故障时最后一个经验证恢复点的年龄和已确认订单损失。沙箱使用本地卷保存备份与 WAL，强制归档形成已知的恢复点。目标环境的自动切换、对象存储持续归档及真实负载下的 RTO 和 RPO 仍需验收。
+
 ### Kafka 历史重建
 
 恢复数据库及本地归档后，可重建独立 Kafka 主题。为每次恢复选用新的运行 ID，并预先创建对应的空主题。以下命令在包含 Kafka 的开发 Compose 项目中执行。
