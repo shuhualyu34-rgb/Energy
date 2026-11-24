@@ -229,11 +229,11 @@ bash scripts/rehearse-spark-recovery.sh
 
 ### 计费源字段变更演练
 
-运行 `bash scripts/rehearse-source-schema.sh --local` 可用临时 SQLite 验证 S4。脚本改名 V1 退款快照的金额字段，核对采集阻断、既有检查点和质量指标，再恢复字段并重采，验证金额、去重和指标恢复。完整 Compose 演练另测 Prometheus 告警触发和解除。
+运行 `bash scripts/rehearse-source-schema.sh --local` 可用临时 SQLite 验证 S4。脚本改名 V1 退款快照的金额字段，核对采集阻断、既有检查点和质量指标，再恢复字段并重采，验证金额、去重和指标恢复。完整 Compose 演练另测告警经 Alertmanager 到达测试接收器。
 
 增量采集拒绝不合法的 V1 记录并保留检查点。质量状态写入目标库，记录来源标识、检查时间和失败类型；原始载荷及字段值不进入质量状态。通过 `/v1/demo/collection-quality` 查询受阻来源。Prometheus 在持续受阻 1 分钟后触发 `CdpCollectionQualityBlocked`；修复数据后，下次成功的增量任务会清除受阻状态。手动回填不会改写增量状态。
 
-构建当前 API 和 Prometheus 镜像后，可执行完整演练。脚本创建并清理独立测试环境，用合成样本验证字段改名、告警触发、修复重跑和告警消退。
+构建当前 API 和 Prometheus 镜像后，可执行完整演练。脚本启动独立的 PostgreSQL、API、Prometheus、Alertmanager 和本机测试接收器，结束后清理演练资源。从每次采集命令启动计时，分别要求测试接收器在 300 秒内收到触发和解除通知，并输出实测耗时。该演练使用合成订单及隔离的 webhook，生产通知渠道需单独验收。
 
 ```sh
 bash scripts/rehearse-source-schema.sh
