@@ -1,0 +1,41 @@
+x-postgres: &postgres
+  image: postgres:16-bookworm@sha256:ce3efec6bc404f6b15ebf5d9bed6b45a9d4655aea238d7dacc3467ccb05a1175
+  environment:
+    POSTGRES_DB: cdp
+    POSTGRES_USER: cdp
+    POSTGRES_PASSWORD: cdp-local-only
+  healthcheck:
+    test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U cdp -d cdp"]
+    interval: 2s
+    timeout: 3s
+    retries: 20
+
+services:
+  primary:
+    <<: *postgres
+    command:
+      - postgres
+      - -c
+      - archive_mode=on
+      - -c
+      - archive_command=test -f /backup/wal/%f || (cp %p /backup/wal/%f.tmp && mv /backup/wal/%f.tmp /backup/wal/%f)
+    volumes:
+      - primary-data:/var/lib/postgresql/data
+      - backup:/backup
+  standby:
+    <<: *postgres
+    volumes:
+      - standby-data:/var/lib/postgresql/data
+      - backup:/backup:ro
+  restored:
+    <<: *postgres
+    command: ["postgres", "-c", "restore_command=cp /backup/wal/%f %p"]
+    volumes:
+      - restored-data:/var/lib/postgresql/data
+      - backup:/backup:ro
+
+volumes:
+  primary-data:
+  standby-data:
+  restored-data:
+  backup:
