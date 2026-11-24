@@ -167,6 +167,17 @@ docker compose -p cdp-event -f compose.yaml -f compose.postgres.yaml -f compose.
 
 发布任务从已入账历史中选取未确认事件，包含迁移时保留的旧快照。Kafka 确认后记录分区和偏移；失败时重跑相同命令。事件以订单号作为分区键，并携带基于订单号、版本和更新时间生成的稳定 `event_id`。Broker 已接收但确认丢失，或确认后数据库提交失败时，消息可能再次投递。消费者需要按 `event_id` 去重。当前确认记录对应一套开发 Kafka 及其持久卷，重建 Broker 时请使用独立演练环境。
 
+
+### I1 Kafka 单 broker 宕机演练
+
+构建当前 API 镜像后运行：
+
+```bash
+bash scripts/rehearse-kafka-broker-failover.sh
+```
+
+演练在隔离的 Compose 项目启动三节点 Kafka KRaft，测试主题使用三副本、最少两个同步副本，生产者复用应用的 `acks=all` 幂等发送。脚本先写入第一批合成消息，再强制终止该分区的 leader，等待剩余两个副本接管后写入第二批。原节点重启并重新加入同步副本集合后，再写入第三批。每阶段从头核对已确认消息的偏移量、键与完整载荷，验收共 30 条消息，无丢失、无重复。演练完成后清理独立容器与数据卷。目标预生产集群的故障演练需独立执行。
+
 ### Kafka 消费与窗口查询
 
 发布 V1 事件后，从同一 PostgreSQL 和 Kafka 沙箱运行消费者。任务完成一批或 Kafka 暂无记录时退出，可重复执行。
