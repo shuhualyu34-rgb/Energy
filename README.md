@@ -59,7 +59,7 @@ bash scripts/rehearse-sandbox-acceptance.sh
 | S6 | 模拟 HTTP 429，验证退避、恢复与去重 |
 | S7 | 24 个月合成历史三次回放，核对日报摘要 |
 
-预生产验收还包括 PostgreSQL、Kafka、Spark 联合部署，Prometheus 告警时效，第 5 万行中断和真实规模回放。
+预生产验收还包括 PostgreSQL、Kafka、Spark 联合部署，Prometheus 告警时效，第 5 万行中断和真实规模回放。可用下文的独立 S3 大样本命令，在合成 SQLite 环境先验证第 5 万行中断。
 
 ## PostgreSQL 沙箱
 
@@ -110,7 +110,13 @@ docker compose exec -T api python -m cdp.collect /data/billing-demo.sqlite3 \
 
 ### S3 采集中断恢复演练
 
-在 Linux 开发环境运行 `bash scripts/rehearse-collector-crash.sh`。脚本生成 120 笔合成订单，在采集子进程提交第 50 笔后发送 SIGKILL。重启后验证检查点从上一次成功位置续跑、已提交订单去重、遗漏订单补齐、归档可读，且日报订单数、电量、电费和服务费与固定参考一致。本演练使用临时 SQLite，预生产第 5 万行中断场景仍需单独验证。
+在 Linux 开发环境运行 `bash scripts/rehearse-collector-crash.sh`。脚本生成 120 笔合成订单，在采集子进程提交第 50 笔后发送 SIGKILL。重启后验证检查点从上一次成功位置续跑、已提交订单去重、遗漏订单补齐、归档可读，且日报订单数、电量、电费和服务费与固定参考一致。默认演练使用临时 SQLite，适用于快速沙箱验收。
+
+```bash
+bash scripts/rehearse-collector-crash.sh --large
+```
+
+大样本模式生成 50,120 笔合成订单，在第 50,000 笔提交后强制终止。恢复时应识别 50,000 笔重复订单并补齐 120 笔，随后核验检查点、日报对账和所有归档订单的标识及摘要。该模式仍使用临时 SQLite，目标预生产部署上的验收需独立执行。
 
 ## V1 订单历史
 

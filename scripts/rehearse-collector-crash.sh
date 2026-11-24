@@ -2,7 +2,8 @@
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
-python -E - <<'PY'
+python -E - "$@" <<'PY'
+import argparse
 import json
 import multiprocessing
 import os
@@ -18,8 +19,12 @@ from cdp.collection_state import export_state
 from cdp.reconcile import ReferenceDay, reconcile
 from cdp.store import Store
 
-total = 120
-kill_after = 50
+parser = argparse.ArgumentParser(description="Rehearse collector recovery after SIGKILL.")
+parser.add_argument("--large", action="store_true", help="interrupt after 50,000 committed orders")
+args = parser.parse_args()
+
+total, kill_after, page_size, timeout = (50_120, 50_000, 512, 600) if args.large else (120, 50, 16, 30)
+order_id_width = len(str(total))
 day = date(2026, 1, 15)
 cutoff = datetime.fromisoformat("2026-01-14T16:31:00+00:00")
 source_id = "crash-demo"
@@ -37,7 +42,7 @@ def interrupted_collection(source, directory):
                     os.kill(os.getpid(), signal.SIGKILL)
             return outcome
 
-    collect(source, InterruptedStore(directory), source_id, cutoff, 16)
+    collect(source, InterruptedStore(directory), source_id, cutoff, page_size)
 
 
 with TemporaryDirectory() as directory:
@@ -51,10 +56,10 @@ with TemporaryDirectory() as directory:
                 UNION ALL SELECT n + 1 FROM numbers WHERE n < ?
             )
             INSERT INTO billing_order_snapshot
-            SELECT printf('demo-order-%03d', n), updated_at, station_id, version,
+            SELECT printf('demo-order-%0*d', ?, n), updated_at, station_id, version,
                    started_at, ended_at, energy_wh, electricity_fee_cents, service_fee_cents
             FROM numbers CROSS JOIN billing_order_snapshot WHERE order_id = 'demo-order-001'
-        """, (total,))
+        """, (total, order_id_width))
 
     sample = json.loads(Path("samples/order.json").read_bytes())
     reference = ReferenceDay.model_validate({
@@ -68,14 +73,16 @@ with TemporaryDirectory() as directory:
     })
 
     store = Store(root / "platform")
-    assert collect(source, store, source_id, cutoff - timedelta(minutes=1), 16)["outcomes"] == {}
+    assert collect(source, store, source_id, cutoff - timedelta(minutes=1), page_size)["outcomes"] == {}
     checkpoint = export_state(store.directory)
     process = multiprocessing.get_context("fork").Process(
         target=interrupted_collection, args=(source, store.directory),
     )
     process.start()
     try:
-        process.join(timeout=30)
+        process.join(timeout=timeout)
+        if process.is_alive():
+            raise TimeoutError(f"Collector did not reach the interrupt point within {timeout} seconds")
         assert process.exitcode == -signal.SIGKILL, process.exitcode
     finally:
         if process.is_alive():
@@ -85,12 +92,17 @@ with TemporaryDirectory() as directory:
     restarted = Store(store.directory)
     assert restarted.daily(day)[0]["order_count"] == kill_after
     assert export_state(restarted.directory) == checkpoint
-    recovered = collect(source, restarted, source_id, cutoff, 16)
+    recovered = collect(source, restarted, source_id, cutoff, page_size)
     assert recovered["outcomes"] == {"duplicate": kill_after, "inserted": total - kill_after}, recovered
     assert export_state(restarted.directory).snapshot.checkpoints[0].through_utc == recovered["through_utc"]
     report = reconcile(restarted, reference)
     assert report["matched"], report
-    assert len(list(restarted.archived_orders())) == total
+    expected_order_ids = {sample["order_id"]}
+    expected_order_ids.update(f"demo-order-{number:0{order_id_width}d}" for number in range(2, total + 1))
+    for raw in restarted.archived_orders():
+        expected_order_ids.remove(json.loads(raw)["order_id"])
+    assert not expected_order_ids, f"{len(expected_order_ids)} expected orders missing from the archive"
+    print(f"Verified {total} archived orders and their checksums.")
     print(f"S3: SIGKILL after {kill_after} commits preserved the previous checkpoint.")
     print(f"Restart recovered {total - kill_after} orders, suppressed {kill_after} duplicates, and matched the reference totals.")
 PY
