@@ -54,7 +54,7 @@ bash scripts/rehearse-full-replay.sh --large
 bash scripts/rehearse-sandbox-acceptance.sh
 ```
 
-入口按七组脚本执行 S1–S9，逐组汇总通过和失败结果。单组失败后会继续执行其余脚本，最终以非零状态退出。演练使用临时 SQLite、合成订单与模拟 HTTP，无需 PostgreSQL 驱动或新容器。若云盘空间不足且 Linux 提供可写的 `/dev/shm`，可在命令前加 `TMPDIR=/dev/shm`。
+入口按七组脚本执行 S1–S9，逐组汇总通过和失败结果。单组失败后会继续执行其余脚本，最终以非零状态退出。演练使用临时 SQLite、合成订单、本机 HTTP 服务和模拟时钟，无需 PostgreSQL 驱动或新容器。若云盘空间不足且 Linux 提供可写的 `/dev/shm`，可在命令前加 `TMPDIR=/dev/shm`。
 
 | 场景 | 沙箱验证 |
 | --- | --- |
@@ -66,7 +66,20 @@ bash scripts/rehearse-sandbox-acceptance.sh
 | S7 | 24 个月合成历史三次回放，核对日报摘要 |
 | S9 | 跨峰谷订单的分段电量、两项费用、归档及一分钱差错阻断 |
 
-预生产验收还包括 PostgreSQL、Kafka、Spark 联合部署，Prometheus 告警时效，第 5 万行中断和真实规模回放。可用下文的独立 S3 大样本命令，在合成 SQLite 环境先验证第 5 万行中断。
+### 扩展验收入口
+
+以下命令均从仓库根目录执行。Compose 场景各自启动并清理独立项目。按场景构建所需镜像：
+
+| 场景 | 命令 | 前置条件 |
+| --- | --- | --- |
+| S3 · 第 50,000 笔中断恢复 | `bash scripts/rehearse-collector-crash.sh --large` | 本地 Python 环境与项目依赖 |
+| S4 · 告警到达与解除 | `bash scripts/rehearse-source-schema.sh` | Compose、API 和 Prometheus 镜像 |
+| S7 · 120 站点历史回放 | `bash scripts/rehearse-full-replay.sh --large` | 本地 Python 环境与项目依赖、临时存储空间 |
+| I1 · Kafka leader 宕机 | `bash scripts/rehearse-kafka-broker-failover.sh` | Compose 和 API 镜像 |
+| I2 · PostgreSQL 切换与恢复 | `bash scripts/rehearse-postgres-primary-recovery.sh` | Compose |
+| M3 · 联合链路时效 | `bash scripts/rehearse-pipeline-latency.sh` | Compose、API 和 Spark 镜像 |
+
+上述场景使用合成数据。目标预生产环境仍需按项目书验证 72 小时稳定运行、真实规模回放、正式告警送达、基础设施故障恢复及业务对账。
 
 ## PostgreSQL 沙箱
 
