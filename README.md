@@ -47,6 +47,17 @@ python -m cdp.reconcile_three_way --finance finance.json --operations operations
 
 工具逐站核对订单数、电量、电费和服务费，分别列出缺失站点和有差异的指标，并输出每份输入的 SHA-256。完全一致退出 0，有差异退出 2，输入无效退出 1。正式月度零差异验收还需接入审批通过的真实快照，并用订单级明细解释差额。
 
+
+#### 月结及订单差异追溯
+
+```bash
+python -m cdp.reconcile_three_way --monthly --finance finance.json --operations operations.json --platform platform.json
+```
+
+月结模式将 `business_day` 顶层字段替换为 `business_month`（如 `2026-01`），冻结时点须在上海月末之后或恰好为下月零点。每份 `rows` 中一个订单只出现一次，包含跨系统对齐的 `order_id`、`station_id`、月内 `business_day`、`energy_wh`、`electricity_fee_cents` 和 `service_fee_cents`。费用支持已按统一口径整理的正负整数分。
+
+报告同时列出 `station_differences` 和 `order_differences`。即使逐站月汇总一致，只要有订单缺失、转站、归日或金额差异，仍退出 2。缺失记录保留其他来源的数值，便于核对差额。计数按输入订单行计算。退款归属、跨系统编码映射和快照来源仍由业务和数据团队确认，工具使用各方提供的冻结快照。
+
 ### S7 24 个月全量回放演练
 
 在已安装依赖的开发环境运行 `bash scripts/rehearse-full-replay.sh`。脚本为 2024 年 1 月至 2025 年 12 月的每个上海业务日生成两个站点的演示订单，校验导出的原始文件摘要，再按三种顺序导入三个空库。每轮额外完整重投一次，逐日与固定口径对账，并比对日报 SHA-256。演练使用临时 SQLite，覆盖 0.1 演示订单的批量重放一致性。
