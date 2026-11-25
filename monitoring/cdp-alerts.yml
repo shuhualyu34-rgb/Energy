@@ -29,3 +29,10 @@ groups:
           severity: warning
         annotations:
           summary: "CDP incremental billing collection is blocked by source data quality"
+      - alert: CdpScheduledQualityAuditWarning
+        expr: cdp_quality_audit_warning_rules{job="cdp-api"} > 0
+        for: 30s
+        labels:
+          severity: warning
+        annotations:
+          summary: "CDP scheduled quality audit found warning rules"

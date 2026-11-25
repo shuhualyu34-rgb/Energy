@@ -49,6 +49,10 @@ def metrics_text(store: Store) -> str:
             SELECT batch_id, completed_at_utc, outcomes
             FROM billing_spark_sink_progress ORDER BY completed_at_utc DESC, checkpoint_key LIMIT 1
         """).fetchone()
+        audit = connection.execute("""
+            SELECT checked_at_utc, results
+            FROM billing_quality_audit_run ORDER BY slot_utc DESC LIMIT 1
+        """).fetchone()
 
     gauges = [
         ("cdp_collection_quality_blocked_sources", "Sources blocked by the latest incremental contract check.",
@@ -74,6 +78,14 @@ def metrics_text(store: Store) -> str:
             ("cdp_spark_sink_last_completed_timestamp_seconds",
              "Last Spark sink callback completion time in Unix seconds.",
              utc(spark["completed_at_utc"]).timestamp()),
+        ])
+
+    if audit:
+        warnings = sum(result["status"] == "warning" for result in json.loads(audit["results"]))
+        gauges.extend([
+            ("cdp_quality_audit_warning_rules", "Rules with warnings in the latest scheduled audit.", warnings),
+            ("cdp_quality_audit_last_completed_timestamp_seconds",
+             "Last scheduled audit completion time in Unix seconds.", utc(audit["checked_at_utc"]).timestamp()),
         ])
 
     lines = []

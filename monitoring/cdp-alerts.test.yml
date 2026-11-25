@@ -12,7 +12,23 @@ tests:
         values: '2+0x64'
       - series: 'cdp_collection_quality_blocked_sources{job="cdp-api"}'
         values: '1+0x4 0+0x59'
+      - series: 'cdp_quality_audit_warning_rules{job="cdp-api"}'
+        values: '0 1+0x3 0+0x4'
     alert_rule_test:
+      - eval_time: 30s
+        alertname: CdpScheduledQualityAuditWarning
+        exp_alerts: []
+      - eval_time: 45s
+        alertname: CdpScheduledQualityAuditWarning
+        exp_alerts:
+          - exp_labels:
+              job: cdp-api
+              severity: warning
+            exp_annotations:
+              summary: CDP scheduled quality audit found warning rules
+      - eval_time: 1m15s
+        alertname: CdpScheduledQualityAuditWarning
+        exp_alerts: []
       - eval_time: 30s
         alertname: CdpCollectionQualityBlocked
         exp_alerts: []

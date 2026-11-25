@@ -22,6 +22,7 @@ class MetricsTest(unittest.TestCase):
             self.assertIn("cdp_kafka_pending_events 0\n", initial)
             self.assertNotIn("cdp_stream_watermark_timestamp_seconds", initial)
             self.assertNotIn("cdp_spark_sink_last_batch_id", initial)
+            self.assertNotIn("cdp_quality_audit_warning_rules", initial)
             record_spark_sink(store, "/dev/private-checkpoint-path", 3, {"late": 2, "duplicate": 1})
             record_spark_sink(store, "/dev/private-checkpoint-path", 2, {"applied": 99})
             result = metrics_text(store)
@@ -60,6 +61,16 @@ class MetricsTest(unittest.TestCase):
                                  ("accepted_versions_pending_kafka", "observation")):
                 self.assertEqual((results[rule]["count"], results[rule]["status"]), (1, status))
             self.assertIn("cdp_kafka_pending_events 1\n", metrics_text(store))
+            now = datetime(2026, 1, 15, tzinfo=timezone.utc)
+            run_scheduled_audit(store, now)
+            metrics = metrics_text(store)
+            self.assertIn("cdp_quality_audit_warning_rules 1\n", metrics)
+            self.assertIn("cdp_quality_audit_last_completed_timestamp_seconds ", metrics)
+            with store.connect() as db:
+                db.execute("UPDATE billing_kafka_delivery SET kafka_partition = 0")
+            self.assertIn("cdp_quality_audit_warning_rules 1\n", metrics_text(store))
+            run_scheduled_audit(store, now + timedelta(hours=6))
+            self.assertIn("cdp_quality_audit_warning_rules 0\n", metrics_text(store))
 
     def test_scheduled_quality_audit_uses_shanghai_slots_and_keeps_first_result(self):
         day = date(2026, 1, 15)

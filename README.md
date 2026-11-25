@@ -309,7 +309,7 @@ docker compose -f compose.yaml -f compose.postgres.yaml -f compose.quality.yaml 
 
 服务按上海时间 00:00、06:00、12:00、18:00 划分四个时段，每 30 秒检查是否进入新时段。启动后补做当前时段，每时段只保留第一份成功结果；停机错过的历史时段留空。每份结果同时保存计划时段和实际检查时间。可运行 `python -m cdp.quality_schedule` 手动检查并留存当前时段，使用与运行环境相同的数据库配置。
 
-`GET /v1/demo/collection-quality/audit-history?day=2026-01-15` 返回指定上海业务日的定时审计记录，沿用质量日报的全站访问权限。正式通知和 40 条规则的完整覆盖仍待完成。
+`GET /v1/demo/collection-quality/audit-history?day=2026-01-15` 返回指定上海业务日的定时审计记录，沿用质量日报的全站访问权限。Prometheus 从 `/metrics` 读取最近留存结果的告警级规则数和实际检查时间。首次审计保存结果后才发布对应指标。告警级规则数持续大于零 30 秒时，`CdpScheduledQualityAuditWarning` 触发。后续时段留存的结果清零后告警解除，排查明细可查询审计历史。目标环境需为此告警配置正式 Alertmanager 收件路由；40 条规则的完整覆盖仍待完成。
 
 ### 计费源字段变更演练
 

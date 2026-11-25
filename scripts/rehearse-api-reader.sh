@@ -113,7 +113,9 @@ audit = json.loads(load("/v1/demo/collection-quality/audit"))["results"]
 assert {row["rule_id"]: row["count"] for row in audit}["accepted_versions_pending_kafka"] == 1, audit
 run, = json.loads(load(f"/v1/demo/collection-quality/audit-history?day={day}"))["runs"]
 assert len(run["results"]) == len(audit), run
-assert b"cdp_stream_observed_events 1" in load("/metrics")
+metrics = load("/metrics")
+assert b"cdp_stream_observed_events 1" in metrics
+assert b"cdp_quality_audit_warning_rules 0" in metrics
 try:
     PostgresStore(Path("/data"),"postgresql://cdp:cdp-local-only@postgres:5432/cdp").verify_api_reader()
 except ValueError:
