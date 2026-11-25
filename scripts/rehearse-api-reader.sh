@@ -104,6 +104,10 @@ assert report["quarantine"] == {
 blocked, recovered = json.loads(load(f"/v1/demo/collection-quality/history?day={day}&limit=2"))["rows"]
 assert blocked["status"] == "blocked" and blocked["declared_amount_cents"] == 1100, blocked
 assert recovered["source_key"] == "role-test" and recovered["status"] == "ok", recovered
+rules = json.loads(load("/v1/demo/collection-quality/rules"))["rules"]
+assert sum(rule["severity"] == "blocking" for rule in rules) == 14, rules
+audit = json.loads(load("/v1/demo/collection-quality/audit"))["results"]
+assert {row["rule_id"]: row["count"] for row in audit}["accepted_versions_pending_kafka"] == 1, audit
 assert b"cdp_stream_observed_events 1" in load("/metrics")
 try:
     PostgresStore(Path("/data"),"postgresql://cdp:cdp-local-only@postgres:5432/cdp").verify_api_reader()

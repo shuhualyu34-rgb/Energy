@@ -27,20 +27,24 @@ def record_spark_sink(store: Store, checkpoint: str, batch_id: int, outcomes: Ma
         """, (key, batch_id, completed_at, json.dumps(dict(outcomes), sort_keys=True)))
 
 
+def operational_counts(connection, bind: str) -> Mapping:
+    return connection.execute(f"""
+        SELECT
+            (SELECT COUNT(*) FROM billing_collection_quality WHERE status = 'blocked') AS blocked_sources,
+            (SELECT COUNT(*) FROM dwd_billing_order_v1_history) AS accepted_versions,
+            (SELECT COUNT(*) FROM billing_kafka_delivery) AS acknowledged_versions,
+            (SELECT COUNT(*) FROM billing_stream_event) AS observed_events,
+            (SELECT COUNT(*) FROM billing_stream_late WHERE applied = FALSE) AS pending_late,
+            (SELECT COUNT(*) FROM billing_stream_late WHERE applied = TRUE) AS applied_late,
+            (SELECT COUNT(*) FROM billing_stream_quarantine) AS quarantined,
+            (SELECT max_event_time_utc FROM billing_stream_progress
+                WHERE stream = {bind}) AS max_event_time_utc
+    """, (STREAM,)).fetchone()
+
+
 def metrics_text(store: Store) -> str:
     with store.connect(readonly=True) as connection:
-        state = connection.execute(f"""
-            SELECT
-                (SELECT COUNT(*) FROM billing_collection_quality WHERE status = 'blocked') AS blocked_sources,
-                (SELECT COUNT(*) FROM dwd_billing_order_v1_history) AS accepted_versions,
-                (SELECT COUNT(*) FROM billing_kafka_delivery) AS acknowledged_versions,
-                (SELECT COUNT(*) FROM billing_stream_event) AS observed_events,
-                (SELECT COUNT(*) FROM billing_stream_late WHERE applied = FALSE) AS pending_late,
-                (SELECT COUNT(*) FROM billing_stream_late WHERE applied = TRUE) AS applied_late,
-                (SELECT COUNT(*) FROM billing_stream_quarantine) AS quarantined,
-                (SELECT max_event_time_utc FROM billing_stream_progress
-                    WHERE stream = {store.bind}) AS max_event_time_utc
-        """, (STREAM,)).fetchone()
+        state = operational_counts(connection, store.bind)
         spark = connection.execute("""
             SELECT batch_id, completed_at_utc, outcomes
             FROM billing_spark_sink_progress ORDER BY completed_at_utc DESC, checkpoint_key LIMIT 1

@@ -17,6 +17,7 @@ from .config import configured_store
 from .dashboard_access import enforce_dashboard_access, load_users, station_scope, visible_stations
 from .metrics import metrics_text
 from .postgres import PostgresStore
+from .quality_audit import quality_audit, rule_catalog
 from .stream import billing_windows
 
 store = configured_store()
@@ -105,6 +106,18 @@ def collection_quality_history(
                 "rows": quality_history(store, day, limit, offset)}
     except OverflowError:
         raise HTTPException(422, "business day is outside the supported range") from None
+
+
+@app.get("/v1/demo/collection-quality/rules")
+def collection_quality_rules(request: Request) -> dict:
+    require_collection_quality_access(request)
+    return {"rules": rule_catalog()}
+
+
+@app.get("/v1/demo/collection-quality/audit")
+def collection_quality_audit(request: Request) -> dict:
+    require_collection_quality_access(request)
+    return quality_audit(store)
 
 
 @app.get("/v1/demo/station-forecast")
