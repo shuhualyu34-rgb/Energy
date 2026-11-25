@@ -275,6 +275,21 @@ bash scripts/rehearse-spark-recovery.sh
 
 脚本创建独立的临时 Compose 项目和数据卷，使用系统分配的 API 端口。它先发布两条合成事件，再在第二条写入暂挂时终止 Spark。重启使用同一 checkpoint，验证首条去重、次条补入以及 API 窗口计数。完成或失败后清理演练资源。失败会输出该项目的容器状态和 Spark 日志。演练不要求提供生产凭据。
 
+
+### D10 采集阻断规则
+
+`GET /v1/demo/collection-quality` 的来源记录包含既有的 `failure_code` 和细分的 `rule_id`。例如，V1 退款事件缺少金额字段时返回 `contract_validation` 和 `billing_schema`。规则编号只显露固定标识，响应不包含失败字段值。历史记录可能没有规则编号，成功重跑后返回 `rule_id: null`。
+
+| 检查 | 规则编号 |
+| --- | --- |
+| JSON、V1 结构和演示订单契约 | `billing_json`、`billing_schema`、`demo_order_contract` |
+| UTC 时间与订单时间顺序 | `billing_timestamp_utc`、`billing_time_order` |
+| 币种、金额勾稽、精度及范围 | `billing_currency`、`billing_amount_balance`、`billing_energy_wh`、`billing_integer_range` |
+| 分时区间、汇总和整数范围 | `billing_tou_interval`、`billing_tou_totals`、`billing_tou_integer_range` |
+| 源游标、同版本冲突 | `billing_source_position`、`order_version_conflict` |
+
+这些规则由增量采集执行。触发时本轮停止且检查点不推进，已提交版本可在修复后幂等重采。该接口保留每个来源的最新状态，完整质量规则库、历史趋势和每日质量日报属于后续交付。
+
 ### 计费源字段变更演练
 
 运行 `bash scripts/rehearse-source-schema.sh --local` 可用临时 SQLite 验证 S4。脚本改名 V1 退款快照的金额字段，核对采集阻断、既有检查点和质量指标，再恢复字段并重采，验证金额、去重和指标恢复。完整 Compose 演练另测告警经 Alertmanager 到达测试接收器。

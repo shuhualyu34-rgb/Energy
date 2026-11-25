@@ -140,7 +140,8 @@ class CollectorTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "cutoff unchanged"):
             collect(self.source, self.store, source, times[1], 1, source_format=BILLING_V1)
         row, = collection_quality(self.store)
-        self.assertEqual((row["status"], row["failure_code"]), ("blocked", "contract_validation"))
+        self.assertEqual((row["status"], row["failure_code"], row["rule_id"]),
+                         ("blocked", "contract_validation", "billing_schema"))
         self.assertIn("cdp_collection_quality_blocked_sources 1\n", metrics_text(self.store))
         self.assertEqual(len(billing_history(self.store, "ORD_20260115_SH001_0001")), 1)
         with closing(sqlite3.connect(self.store.directory / "collection.sqlite3")) as db:
@@ -155,7 +156,7 @@ class CollectorTest(unittest.TestCase):
         recovered = collect(self.source, self.store, source, times[2], 1, source_format=BILLING_V1)
         self.assertEqual(recovered["outcomes"], {"duplicate": 1, "updated": 1})
         row, = collection_quality(self.store)
-        self.assertEqual((row["status"], row["failure_code"]), ("ok", None))
+        self.assertEqual((row["status"], row["failure_code"], row["rule_id"]), ("ok", None, None))
         self.assertIn("cdp_collection_quality_blocked_sources 0\n", metrics_text(self.store))
 
 

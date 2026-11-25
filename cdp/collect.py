@@ -16,6 +16,7 @@ from .collection_quality import CollectionRejected, record_quality
 from .collection_state import CHECKPOINT_FILE, CHECKPOINT_SCHEMA
 from .config import configured_store
 from .contract import Key, Order
+from .quality_rules import QualityRule
 from .store import Store, VersionConflict
 
 ORDER_COLUMNS = tuple(sorted(Order.model_fields.keys() - {"schema_version"}))
@@ -67,7 +68,7 @@ def collect(
         try:
             outcomes = poll(source_uri, store, lower_utc, upper_utc, page_size, source_format)
         except CollectionRejected as error:
-            record_quality(store, checkpoint_id, error.code)
+            record_quality(store, checkpoint_id, error.code, error.rule_id)
             raise
         record_quality(store, checkpoint_id, None)
         state.execute("""
@@ -109,9 +110,11 @@ def poll(
                         snapshot["schema_version"] = "0.1"
                         outcome = store.ingest(json.dumps(snapshot, sort_keys=True).encode())
                 except VersionConflict:
-                    raise CollectionRejected("version_conflict") from None
-                except (ValidationError, BillingContractError):
-                    raise CollectionRejected("contract_validation") from None
+                    raise CollectionRejected("version_conflict", QualityRule.ORDER_VERSION_CONFLICT) from None
+                except BillingContractError as error:
+                    raise CollectionRejected("contract_validation", error.rule_id) from None
+                except ValidationError:
+                    raise CollectionRejected("contract_validation", QualityRule.DEMO_ORDER_CONTRACT) from None
                 outcomes[outcome] += 1
 
 

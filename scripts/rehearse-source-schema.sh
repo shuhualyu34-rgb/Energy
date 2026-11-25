@@ -39,7 +39,7 @@ with TemporaryDirectory() as directory:
     try:
         collect(source, store, source_id, cutoff, **options)
     except CollectionRejected as error:
-        assert error.code == "contract_validation", error.code
+        assert (error.code, error.rule_id) == ("contract_validation", "billing_schema")
     else:
         raise AssertionError("schema change did not block collection")
 
@@ -141,7 +141,7 @@ api, prom, receiver, expected, started = sys.argv[1:]
 started = float(started)
 alert_name = "CdpCollectionQualityBlocked"
 rule_state, receipt_state = ("firing", "firing") if expected == "blocked" else ("inactive", "resolved")
-expected_failure = "contract_validation" if expected == "blocked" else None
+expected_failure = ("contract_validation", "billing_schema") if expected == "blocked" else (None, None)
 opener = build_opener(ProxyHandler({}))
 
 def load(target, route):
@@ -159,7 +159,8 @@ while True:
         raise AssertionError(f"No {receipt_state} notification within 300 s: {sources}, {alert['state']}, {receipts}")
     if (any(
             source["source_key"] == "billing-v1:schema-rehearsal"
-            and (source["status"], source["failure_code"]) == (expected, expected_failure)
+            and source["status"] == expected
+            and (source["failure_code"], source["rule_id"]) == expected_failure
             for source in sources
         )
             and alert["state"] == rule_state

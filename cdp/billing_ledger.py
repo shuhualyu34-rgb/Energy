@@ -9,6 +9,7 @@ from pathlib import Path
 from .billing import BillingContractError, energy_wh, utc, validate_billing_order
 from .billing_event import BILLING_ARCHIVE, billing_payload
 from .config import configured_store
+from .quality_rules import QualityRule
 from .store import Store
 
 
@@ -22,7 +23,9 @@ def normalized_slices(row: dict) -> str:
             ) if key in part
         }
         if any(type(value) is not int or value > 2**63 - 1 for key, value in fields.items() if key != "tou_type"):
-            raise BillingContractError("TOU fees and rates must be expressed as BIGINT-compatible integers")
+            raise BillingContractError(
+                "TOU fees and rates must be expressed as BIGINT-compatible integers", QualityRule.BILLING_TOU_INTEGER_RANGE,
+            )
         structured.append({
             **fields,
             "start_time": utc(part["start_time"]).isoformat(),
@@ -43,11 +46,15 @@ def ingest_billing(
     )
     amounts = {key: row.get(key, 0) for key in integers}
     if any(type(value) is not int or value > 2**63 - 1 for value in (*amounts.values(), version)):
-        raise BillingContractError("version and money must be expressed as BIGINT-compatible integers")
+        raise BillingContractError(
+            "version and money must be expressed as BIGINT-compatible integers", QualityRule.BILLING_INTEGER_RANGE,
+        )
 
     updated = utc(row["updated_at"]).isoformat(timespec="microseconds")
     if source_position is not None and source_position != (updated, order_id, version):
-        raise BillingContractError("source cursor does not match the billing payload")
+        raise BillingContractError(
+            "source cursor does not match the billing payload", QualityRule.BILLING_SOURCE_POSITION,
+        )
     snapshot = json.dumps({
         "station_id": row["station_id"],
         "gun_id": row["gun_id"],
@@ -101,9 +108,13 @@ def write_snapshot(
                     WHERE order_id = {bind} AND version = {bind} AND updated_at_utc = {bind}
                 """, (order_id, version, updated)).fetchone()
                 if (status, snapshot) != (accepted["status"], accepted["snapshot"]):
-                    raise BillingContractError("conflicting snapshots at the same version and update time")
+                    raise BillingContractError(
+                        "conflicting snapshots at the same version and update time", QualityRule.ORDER_VERSION_CONFLICT,
+                    )
                 if accepted["tou_slices"] is not None and slices != accepted["tou_slices"]:
-                    raise BillingContractError("conflicting TOU slices at the same version and update time")
+                    raise BillingContractError(
+                        "conflicting TOU slices at the same version and update time", QualityRule.ORDER_VERSION_CONFLICT,
+                    )
                 return "duplicate"
 
         archived = billing_payload(position, status, snapshot, slices)
