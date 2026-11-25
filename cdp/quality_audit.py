@@ -4,6 +4,7 @@ from dataclasses import asdict
 from datetime import datetime, timezone
 
 from .metrics import operational_counts
+from .quality_integrity import INTEGRITY_CHECKS, integrity_counts
 from .quality_rules import COLLECTION_RULES, RuleDefinition
 from .store import Store
 
@@ -23,8 +24,11 @@ AUDIT_RULES = (
 )
 
 
+ALL_AUDIT_RULES = (*AUDIT_RULES, *(item.rule for item in INTEGRITY_CHECKS))
+
+
 def rule_catalog() -> list[dict]:
-    return [asdict(rule) for rule in (*COLLECTION_RULES, *AUDIT_RULES)]
+    return [asdict(rule) for rule in (*COLLECTION_RULES, *ALL_AUDIT_RULES)]
 
 
 def quality_audit(store: Store) -> dict:
@@ -38,6 +42,7 @@ def quality_audit(store: Store) -> dict:
                  LEFT JOIN billing_collection_quality_rule AS rule ON rule.source_key = quality.source_key
                  WHERE quality.status = 'blocked' AND rule.rule_id IS NULL) AS missing_rule
         """).fetchone()
+        integrity = integrity_counts(connection, store.bind)
 
     counts = {
         "accepted_versions_pending_kafka": state["accepted_versions"] - state["acknowledged_versions"],
@@ -46,12 +51,13 @@ def quality_audit(store: Store) -> dict:
         "stream_time_quarantine": state["quarantined"],
         "kafka_delivery_coordinates": additional["invalid_coordinates"],
         "blocked_source_without_rule": additional["missing_rule"],
+        **integrity,
     }
     return {
         "checked_at_utc": datetime.now(timezone.utc).isoformat(timespec="microseconds"),
         "results": [
             {"rule_id": rule.rule_id, "count": counts[rule.rule_id],
              "status": rule.severity if counts[rule.rule_id] else "clear"}
-            for rule in AUDIT_RULES
+            for rule in ALL_AUDIT_RULES
         ],
     }

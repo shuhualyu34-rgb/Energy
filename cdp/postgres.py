@@ -17,12 +17,14 @@ READ_RELATIONS = (
     "billing_collection_rejection",
     "billing_feature_availability",
     "billing_kafka_delivery",
+    "billing_order_archive",
     "billing_quality_audit_run",
     "billing_spark_sink_progress",
     "billing_stream_event",
     "billing_stream_late",
     "billing_stream_progress",
     "billing_stream_quarantine",
+    "dwd_billing_order_v1",
     "dwd_billing_order_v1_history",
 )
 

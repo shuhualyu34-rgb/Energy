@@ -61,6 +61,7 @@ from urllib.request import urlopen
 import psycopg
 from psycopg.errors import InsufficientPrivilege
 from cdp.postgres import PostgresStore
+from cdp.quality_integrity import INTEGRITY_CHECKS
 
 assert not os.environ.get("CDP_POSTGRES_DSN")
 reader = os.environ["CDP_API_POSTGRES_DSN"]
@@ -108,11 +109,13 @@ blocked, recovered = json.loads(load(f"/v1/demo/collection-quality/history?day={
 assert blocked["status"] == "blocked" and blocked["declared_amount_cents"] == 1100, blocked
 assert recovered["source_key"] == "role-test" and recovered["status"] == "ok", recovered
 rules = json.loads(load("/v1/demo/collection-quality/rules"))["rules"]
-assert sum(rule["severity"] == "blocking" for rule in rules) == 14, rules
+assert len(rules) == 40 and sum(rule["severity"] == "blocking" for rule in rules) == 14, rules
 audit = json.loads(load("/v1/demo/collection-quality/audit"))["results"]
 assert {row["rule_id"]: row["count"] for row in audit}["accepted_versions_pending_kafka"] == 1, audit
 run, = json.loads(load(f"/v1/demo/collection-quality/audit-history?day={day}"))["runs"]
-assert len(run["results"]) == len(audit), run
+assert len(run["results"]) == len(audit) == 26, run
+audit_counts = {row["rule_id"]: row["count"] for row in audit}
+assert all(audit_counts[check.rule.rule_id] == 0 for check in INTEGRITY_CHECKS), audit
 metrics = load("/metrics")
 assert b"cdp_stream_observed_events 1" in metrics
 assert b"cdp_quality_audit_warning_rules 0" in metrics

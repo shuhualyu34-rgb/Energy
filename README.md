@@ -298,7 +298,7 @@ bash scripts/rehearse-spark-recovery.sh
 只有当 V1 输入的订单标识与源游标一致，且人民币总额可用整数分与费用组件勾稽时，才记录来源申报金额。同一订单的被拒记录金额一致时，日报只计一次；金额缺失或冲突的订单计入金额未知。申报金额用于解释差异，业务入账仍须通过契约。历史接口仅返回是否有隔离证据及可用金额。原始载荷和指纹均不在接口返回。
 
 
-规则目录 `GET /v1/demo/collection-quality/rules` 提供 14 项采集阻断规则和 6 项只读审计规则，列出检查条件、级别、责任角色和处置动作。使用 `GET /v1/demo/collection-quality/audit` 可按需检查 Kafka 投递、迟到流事件、流时间隔离和缺少规则编号的受阻来源。结果带 UTC 检查时间，按规则返回计数。目录与审计使用和质量日报相同的权限。
+规则目录 `GET /v1/demo/collection-quality/rules` 提供 14 项采集阻断规则和 26 项只读审计规则，列出检查条件、级别、责任角色和处置动作。使用 `GET /v1/demo/collection-quality/audit` 可按需检查 Kafka 投递、迟到流事件、流时间隔离和缺少规则编号的受阻来源。审计也检查当前订单与历史版本的一致性、归档和特征证据、投递坐标、流进度，以及检查记录与隔离证据的关联。结果带 UTC 检查时间，按规则返回计数。目录与审计使用和质量日报相同的权限。
 
 审计结果描述查询时的运行状态。观察项用于排查，Kafka 确认坐标异常标记为告警级。需要定时留存时，先构建 API 镜像，然后启动质量审计服务：
 
@@ -309,7 +309,7 @@ docker compose -f compose.yaml -f compose.postgres.yaml -f compose.quality.yaml 
 
 服务按上海时间 00:00、06:00、12:00、18:00 划分四个时段，每 30 秒检查是否进入新时段。启动后补做当前时段，每时段只保留第一份成功结果；停机错过的历史时段留空。每份结果同时保存计划时段和实际检查时间。可运行 `python -m cdp.quality_schedule` 手动检查并留存当前时段，使用与运行环境相同的数据库配置。
 
-`GET /v1/demo/collection-quality/audit-history?day=2026-01-15` 返回指定上海业务日的定时审计记录，沿用质量日报的全站访问权限。Prometheus 从 `/metrics` 读取最近留存结果的告警级规则数和实际检查时间。首次审计保存结果后才发布对应指标。告警级规则数持续大于零 30 秒时，`CdpScheduledQualityAuditWarning` 触发。后续时段留存的结果清零后告警解除，排查明细可查询审计历史。目标环境需为此告警配置正式 Alertmanager 收件路由；40 条规则的完整覆盖仍待完成。
+`GET /v1/demo/collection-quality/audit-history?day=2026-01-15` 返回指定上海业务日的定时审计记录，沿用质量日报的全站访问权限。Prometheus 从 `/metrics` 读取最近留存结果的告警级规则数和实际检查时间。首次审计保存结果后才发布对应指标。告警级规则数持续大于零 30 秒时，`CdpScheduledQualityAuditWarning` 触发。后续时段留存的结果清零后告警解除，排查明细可查询审计历史。开发沙箱现有 40 条可执行规则。目标环境仍需配置正式 Alertmanager 收件路由，并用批准的来源验证站点编码一致性、端到端时效和月度收入对账。
 
 ### 计费源字段变更演练
 
@@ -571,6 +571,6 @@ dc up -d --no-build --wait api
 dc run --rm --no-deps db-access-init python -m cdp.cli samples/order.json
 ```
 
-使用自备只读角色时，先在独立写入任务中执行数据库迁移，再设置 `CDP_API_POSTGRES_DSN` 启动 API。指定只读连接后，API 不执行迁移，并在启动时检查高权限角色、公共 schema 建表权和业务表写入权。API 对所有数据库事务启用只读模式。启动和 `/health/ready` 检查 `cdp/postgres.py` 中列出的查询关系是否存在且可读取。Compose 中的账号仅供本地开发。生产凭据、角色管理及数据库网络权限应由部署环境提供。
+现有只读 Compose 部署升级规则库时，先重新运行 `dc run --rm --no-deps db-access-init`，为当前订单表和归档索引补齐读取授权，再启动新版 API。使用自备只读角色时，先在独立写入任务中执行数据库迁移及授权，再设置 `CDP_API_POSTGRES_DSN` 启动 API。指定只读连接后，API 不执行迁移，并在启动时检查高权限角色、公共 schema 建表权和业务表写入权。API 对所有数据库事务启用只读模式。启动和 `/health/ready` 检查 `cdp/postgres.py` 中列出的查询关系是否存在且可读取。Compose 中的账号仅供本地开发。生产凭据、角色管理及数据库网络权限应由部署环境提供。
 
 在独立临时数据库验证账户权限与 API 查询，可运行 `bash scripts/rehearse-api-reader.sh`。演练检查日报、流窗口、预测、质量和监控查询，以及业务表更新、公共 schema 建表、归档卷写入均被拒绝。
