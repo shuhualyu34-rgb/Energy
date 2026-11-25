@@ -397,7 +397,17 @@ dc logs --tail 20 pipeline spark-worker
 bash scripts/rehearse-pipeline-latency.sh
 ```
 
-脚本启动独立的 PostgreSQL、Kafka、定时采集和 Spark 环境，分三轮写入 30 笔合成订单。从生成事件计时，每秒查询窗口 API，核对站点、状态、5 分钟事件时间窗口及计数，并报告可见时延的 P95 和最大值。脚本同时检查 Kafka 确认数和 Spark 实际落库数。演练默认将采集间隔设为 5 秒，可用 `CDP_PIPELINE_INTERVAL_SECONDS` 调整。该演练用于短时端到端验证，正式 M3 仍需在目标环境连续运行 72 小时。
+脚本启动独立的 PostgreSQL、Kafka、定时采集和 Spark 环境，分三轮写入 30 笔合成订单。从生成事件计时，每秒查询窗口 API，核对站点、状态、5 分钟事件时间窗口及计数，并报告可见时延的 P95 和最大值。脚本同时检查 Kafka 确认数和 Spark 实际落库数。演练默认将采集间隔设为 5 秒，可用 `CDP_PIPELINE_INTERVAL_SECONDS` 调整。默认模式执行三轮。脚本还核对演练前后的容器标识、启动时间和重启次数，任一服务重启或替换都会导致失败。
+
+在目标验收环境运行 72 小时模式前，按相同版本构建 API 和 Spark 镜像。以下命令每 5 分钟注入一批合成订单，采集使用与默认部署一致的 60 秒间隔：
+
+```bash
+set -o pipefail
+CDP_M3_DURATION_SECONDS=259200 CDP_M3_WAVE_INTERVAL_SECONDS=300 CDP_PIPELINE_INTERVAL_SECONDS=60 \
+  bash scripts/rehearse-pipeline-latency.sh 2>&1 | tee m3-acceptance.log
+```
+
+时长从第一批开始计，脚本在批次之间检查 API 就绪状态。日志包含每批的 UTC 时间、可见时延，以及最终样本数、P95 和最大时延。Compose 项目和临时数据卷会在退出时清理，`tee` 会保留日志。验收以目标环境完整运行的结果为准。
 
 ### V1 入账归档核验
 

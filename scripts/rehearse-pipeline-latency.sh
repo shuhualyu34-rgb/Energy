@@ -2,6 +2,13 @@
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
+duration=${CDP_M3_DURATION_SECONDS:-0}
+wave_interval=${CDP_M3_WAVE_INTERVAL_SECONDS:-300}
+if [[ ! "$duration" =~ ^(0|[1-9][0-9]*)$ || ! "$wave_interval" =~ ^[1-9][0-9]*$ ]]; then
+    printf '%s\n' 'Set CDP_M3_DURATION_SECONDS to a nonnegative integer and CDP_M3_WAVE_INTERVAL_SECONDS to a positive integer.' >&2
+    exit 2
+fi
+
 work_dir=$(mktemp -d /tmp/cdp-pipeline-latency.XXXXXXXX)
 project="cdp-latency-${work_dir##*.}"
 project=${project,,}
@@ -38,15 +45,33 @@ with closing(sqlite3.connect("/data/billing-v1-pipeline.sqlite3")) as source, so
 PY
 dc up -d --no-build --wait --wait-timeout 120 pipeline spark-worker
 
-dc exec -T api python -u - <<'PY'
+service_state() {
+    local service container
+    for service in api pipeline spark-worker postgres kafka; do
+        container=$(dc ps -q "$service") || return
+        [[ -n "$container" ]] || return 1
+        docker inspect --format '{{.Id}} {{.RestartCount}} {{.State.StartedAt}} {{.State.Running}}' "$container" || return
+    done
+}
+before=$(service_state)
+while read -r container restarts started running; do
+    [[ "$restarts" == 0 && "$running" == true ]] || {
+        printf 'Service did not start cleanly: %s %s %s %s\n' "$container" "$restarts" "$started" "$running" >&2
+        exit 1
+    }
+done <<< "$before"
+
+dc exec -T api python -u - "$duration" "$wave_interval" <<'PY'
 import json
 import sqlite3
+import sys
 from contextlib import closing
 from datetime import datetime, timedelta, timezone
 from math import ceil
 from time import monotonic, sleep
 from urllib.request import urlopen
 
+duration, wave_interval = map(int, sys.argv[1:])
 source_path = "/data/billing-v1-pipeline.sqlite3"
 deadline_seconds = 300
 latencies = []
@@ -64,7 +89,25 @@ def windows(day):
     return response["rows"]
 
 
-for wave in range(3):
+def waves(started):
+    if not duration:
+        yield from range(3)
+        return
+    deadline = started + duration
+    next_wave = started
+    wave = 0
+    while (now := monotonic()) < deadline:
+        if now >= next_wave:
+            yield wave
+            wave += 1
+            next_wave = max(next_wave + wave_interval, monotonic())
+        else:
+            sleep(min(30, next_wave - now, deadline - now))
+            assert json.loads(api("/health/ready"))["status"] == "ready"
+
+
+run_started = monotonic()
+for wave in waves(run_started):
     started = monotonic()
     event_time = datetime.now(timezone.utc)
     day = event_time.date().isoformat()
@@ -104,7 +147,7 @@ for wave in range(3):
                 latencies.append(elapsed)
         if pending:
             sleep(1)
-    print(f"Wave {wave + 1}: all 10 new orders visible within {elapsed:.1f}s.")
+    print(f"{stamp} Wave {wave + 1}: all 10 new orders visible within {elapsed:.1f}s.")
 
 for day, expected in expected_by_day.items():
     actual = windows(day)
@@ -132,6 +175,16 @@ for metric, value in {
     assert f"{metric} {value}" in metrics, metrics
 
 p95 = sorted(latencies)[ceil(0.95 * len(latencies)) - 1]
-assert len(latencies) == 30 and p95 <= deadline_seconds, latencies
-print(f"PASS: {len(latencies)} generated orders, source to API visibility P95 {p95:.1f}s; max {max(latencies):.1f}s.")
+assert len(latencies) == (wave + 1) * 10 and p95 <= deadline_seconds, latencies
+elapsed = monotonic() - run_started
+assert elapsed >= duration, (elapsed, duration)
+print(f"Visibility: {len(latencies)} orders in {wave + 1} waves, observation time {elapsed:.1f}s, "
+      f"P95 {p95:.1f}s; max {max(latencies):.1f}s.")
 PY
+
+after=$(service_state)
+if [[ "$before" != "$after" ]]; then
+    printf 'Service state changed during the rehearsal.\nBefore:\n%s\nAfter:\n%s\n' "$before" "$after" >&2
+    exit 1
+fi
+printf '%s\n' 'PASS: order windows reconciled and API, collector, Spark, PostgreSQL and Kafka ran without restart.'
