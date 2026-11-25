@@ -300,7 +300,16 @@ bash scripts/rehearse-spark-recovery.sh
 
 规则目录 `GET /v1/demo/collection-quality/rules` 提供 14 项采集阻断规则和 6 项只读审计规则，列出检查条件、级别、责任角色和处置动作。使用 `GET /v1/demo/collection-quality/audit` 可按需检查 Kafka 投递、迟到流事件、流时间隔离和缺少规则编号的受阻来源。结果带 UTC 检查时间，按规则返回计数。目录与审计使用和质量日报相同的权限。
 
-审计结果描述查询时的运行状态。观察项用于排查，Kafka 确认坐标异常标记为告警级。固定频次调度、审计结果留存、正式通知和 40 条规则的完整覆盖仍待实现。
+审计结果描述查询时的运行状态。观察项用于排查，Kafka 确认坐标异常标记为告警级。需要定时留存时，先构建 API 镜像，然后启动质量审计服务：
+
+```sh
+docker compose -f compose.yaml -f compose.postgres.yaml -f compose.quality.yaml \
+  --profile quality up --no-build --detach --wait quality-audit
+```
+
+服务按上海时间 00:00、06:00、12:00、18:00 划分四个时段，每 30 秒检查是否进入新时段。启动后补做当前时段，每时段只保留第一份成功结果；停机错过的历史时段留空。每份结果同时保存计划时段和实际检查时间。可运行 `python -m cdp.quality_schedule` 手动检查并留存当前时段，使用与运行环境相同的数据库配置。
+
+`GET /v1/demo/collection-quality/audit-history?day=2026-01-15` 返回指定上海业务日的定时审计记录，沿用质量日报的全站访问权限。正式通知和 40 条规则的完整覆盖仍待完成。
 
 ### 计费源字段变更演练
 

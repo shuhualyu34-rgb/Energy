@@ -23,6 +23,7 @@ from cdp.billing_event import event_id
 from cdp.billing_ledger import ingest_billing
 from cdp.collection_quality import RejectedRecord, record_quality
 from cdp.config import configured_store
+from cdp.quality_schedule import run_scheduled_audit
 from cdp.stream import observe
 
 store = configured_store()
@@ -46,6 +47,8 @@ with patch("cdp.collection_quality.datetime") as clock:
     record_quality(store, "role-test", "contract_validation",
                    rejection=RejectedRecord("synthetic-key", "synthetic-record", 1100))
     record_quality(store, "role-test", None)
+assert run_scheduled_audit(store, checked_at)["status"] == "recorded"
+assert run_scheduled_audit(store, checked_at)["status"] == "already_recorded"
 PY
 dc exec -T api python - <<'PY'
 import json
@@ -108,6 +111,8 @@ rules = json.loads(load("/v1/demo/collection-quality/rules"))["rules"]
 assert sum(rule["severity"] == "blocking" for rule in rules) == 14, rules
 audit = json.loads(load("/v1/demo/collection-quality/audit"))["results"]
 assert {row["rule_id"]: row["count"] for row in audit}["accepted_versions_pending_kafka"] == 1, audit
+run, = json.loads(load(f"/v1/demo/collection-quality/audit-history?day={day}"))["runs"]
+assert len(run["results"]) == len(audit), run
 assert b"cdp_stream_observed_events 1" in load("/metrics")
 try:
     PostgresStore(Path("/data"),"postgresql://cdp:cdp-local-only@postgres:5432/cdp").verify_api_reader()

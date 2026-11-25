@@ -1,0 +1,11 @@
+services:
+  quality-audit:
+    image: cdp1:0.40.0-dev
+    profiles: [quality]
+    command: ["python", "-m", "cdp.quality_schedule", "--follow"]
+    environment:
+      CDP_POSTGRES_DSN: ${CDP_QUALITY_POSTGRES_DSN:-postgresql://cdp:cdp-local-only@postgres:5432/cdp}
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped

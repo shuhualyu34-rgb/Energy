@@ -17,6 +17,7 @@ READ_RELATIONS = (
     "billing_collection_rejection",
     "billing_feature_availability",
     "billing_kafka_delivery",
+    "billing_quality_audit_run",
     "billing_spark_sink_progress",
     "billing_stream_event",
     "billing_stream_late",
@@ -50,7 +51,7 @@ class PostgresStore(Store):
                 CREATE TABLE IF NOT EXISTS cdp_migration (version INTEGER PRIMARY KEY)
             """)
             directory = Path(__file__).with_name("migrations")
-            for version in (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15):
+            for version in (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16):
                 applied = connection.execute(
                     "SELECT 1 FROM cdp_migration WHERE version = %s", (version,)
                 )

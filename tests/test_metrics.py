@@ -1,6 +1,6 @@
 import json
 import unittest
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -9,6 +9,7 @@ from cdp.collection_quality import record_quality
 from cdp.metrics import metrics_text, record_spark_sink
 from cdp.quality_audit import quality_audit, rule_catalog
 from cdp.quality_rules import QualityRule
+from cdp.quality_schedule import audit_slot, run_scheduled_audit, scheduled_audit_history
 from cdp.store import Store
 
 
@@ -59,6 +60,34 @@ class MetricsTest(unittest.TestCase):
                                  ("accepted_versions_pending_kafka", "observation")):
                 self.assertEqual((results[rule]["count"], results[rule]["status"]), (1, status))
             self.assertIn("cdp_kafka_pending_events 1\n", metrics_text(store))
+
+    def test_scheduled_quality_audit_uses_shanghai_slots_and_keeps_first_result(self):
+        day = date(2026, 1, 15)
+        midnight = datetime.fromisoformat("2026-01-14T16:00:00+00:00")
+        with TemporaryDirectory() as directory:
+            store = Store(Path(directory))
+            store.initialize()
+            for hours in (0, 6, 12, 18):
+                slot = midnight + timedelta(hours=hours)
+                actual = run_scheduled_audit(store, slot + timedelta(minutes=7))
+                self.assertEqual(actual, {"slot_utc": audit_slot(slot), "status": "recorded"})
+                repeated = run_scheduled_audit(Store(store.directory), slot + timedelta(hours=2))
+                self.assertEqual(repeated, actual | {"status": "already_recorded"})
+
+            original = scheduled_audit_history(store, day)
+            self.assertEqual([row["slot_utc"] for row in original], [
+                (midnight + timedelta(hours=hours)).isoformat(timespec="microseconds")
+                for hours in (0, 6, 12, 18)
+            ])
+            self.assertTrue(all(row["status"] == "clear" for run in original for row in run["results"]))
+            record_quality(store, "legacy-source", "contract_validation")
+            run_scheduled_audit(store, midnight + timedelta(hours=23))
+            self.assertEqual(scheduled_audit_history(store, day), original)
+
+            run_scheduled_audit(store, midnight + timedelta(days=1))
+            next_day, = scheduled_audit_history(store, day + timedelta(days=1))
+            self.assertIn({"rule_id": "blocked_source_without_rule", "count": 1, "status": "observation"},
+                          next_day["results"])
 
 
 if __name__ == "__main__":
