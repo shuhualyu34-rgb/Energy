@@ -36,6 +36,17 @@ bash scripts/rehearse-batch-reconciliation.sh
 
 脚本用临时 SQLite 库验证上海午夜前后的订单归日、金额修订、重复和旧版本投递。对账以固定样例为基准，也验证金额不符时返回退出码 2。随后导出已提交的订单快照，分别导入三个空库，逐日比对对账结果。此演练覆盖 0.1 演示订单及其站点日报，运行结束会清理临时数据。
 
+
+### M2 三方冻结日报对账
+
+```bash
+python -m cdp.reconcile_three_way --finance finance.json --operations operations.json --platform platform.json
+```
+
+输入使用与 `samples/reference-day.json` 相同的 `business_day` 和 `rows`，并显式提供 `source`（与参数中的角色一致）、`timezone`（`Asia/Shanghai`）、`metric_version`（如 `demo-0.1`）及带时区的 `frozen_at`。三份文件须采用同一业务日、指标版本和冻结时点，冻结时间至少为该上海业务日结束。应从各系统独立导出已冻结的汇总。
+
+工具逐站核对订单数、电量、电费和服务费，分别列出缺失站点和有差异的指标，并输出每份输入的 SHA-256。完全一致退出 0，有差异退出 2，输入无效退出 1。正式月度零差异验收还需接入审批通过的真实快照，并用订单级明细解释差额。
+
 ### S7 24 个月全量回放演练
 
 在已安装依赖的开发环境运行 `bash scripts/rehearse-full-replay.sh`。脚本为 2024 年 1 月至 2025 年 12 月的每个上海业务日生成两个站点的演示订单，校验导出的原始文件摘要，再按三种顺序导入三个空库。每轮额外完整重投一次，逐日与固定口径对账，并比对日报 SHA-256。演练使用临时 SQLite，覆盖 0.1 演示订单的批量重放一致性。
