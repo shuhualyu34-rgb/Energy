@@ -288,7 +288,12 @@ bash scripts/rehearse-spark-recovery.sh
 | 分时区间、汇总和整数范围 | `billing_tou_interval`、`billing_tou_totals`、`billing_tou_integer_range` |
 | 源游标、同版本冲突 | `billing_source_position`、`order_version_conflict` |
 
-这些规则由增量采集执行。触发时本轮停止且检查点不推进，已提交版本可在修复后幂等重采。该接口保留每个来源的最新状态，完整质量规则库、历史趋势和每日质量日报属于后续交付。
+这些规则由增量采集执行。触发时本轮停止且检查点不推进，已提交版本可在修复后幂等重采。最新状态接口每个来源返回一条记录。另有按上海业务日查询的日报与历史接口：
+
+- `GET /v1/demo/collection-quality/daily?day=2026-01-15` 汇总检查次数、阻断次数，并按来源、状态和规则列出明细计数。
+- `GET /v1/demo/collection-quality/history?day=2026-01-15&limit=100&offset=0` 分页列出当日的检查编号、UTC 时间、来源、状态和规则，按检查时间从早到晚排序。限额最多 500 条。
+
+启用驾驶舱权限后，这两个接口只对全站账户开放。迁移前的最新状态仍可查询，历史从启用新版本后开始记录。日报统计的是检查次数。同一问题重复阻断会留下多次记录，隔离订单数和金额须由后续隔离明细交付提供。
 
 ### 计费源字段变更演练
 

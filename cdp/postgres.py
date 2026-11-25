@@ -12,6 +12,7 @@ from .store import Store
 READ_RELATIONS = (
     "ads_station_daily",
     "billing_collection_quality",
+    "billing_collection_quality_history",
     "billing_collection_quality_rule",
     "billing_feature_availability",
     "billing_kafka_delivery",
@@ -48,7 +49,7 @@ class PostgresStore(Store):
                 CREATE TABLE IF NOT EXISTS cdp_migration (version INTEGER PRIMARY KEY)
             """)
             directory = Path(__file__).with_name("migrations")
-            for version in (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13):
+            for version in (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14):
                 applied = connection.execute(
                     "SELECT 1 FROM cdp_migration WHERE version = %s", (version,)
                 )

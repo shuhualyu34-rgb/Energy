@@ -44,7 +44,9 @@ PY
 dc exec -T api python - <<'PY'
 import json
 import os
+from datetime import datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 from urllib.request import urlopen
 
 import psycopg
@@ -84,7 +86,13 @@ assert json.loads(load("/health/ready"))["status"] == "ready"
 assert json.loads(load("/v1/demo/station-daily?day=2026-01-15"))["rows"][0]["order_count"] == 1
 assert json.loads(load("/v1/demo/billing-events/windows?day=2026-01-14"))["rows"][0]["station_id"] == "ST_SH_030"
 assert json.loads(load("/v1/demo/station-forecast"))["predictions"][0]["predicted_energy_wh"] == 10000
-assert json.loads(load("/v1/demo/collection-quality"))["sources"][0]["source_key"] == "role-test"
+quality, = json.loads(load("/v1/demo/collection-quality"))["sources"]
+assert quality["source_key"] == "role-test"
+day = datetime.fromisoformat(quality["checked_at_utc"]).astimezone(ZoneInfo("Asia/Shanghai")).date()
+report = json.loads(load(f"/v1/demo/collection-quality/daily?day={day}"))
+assert (report["total_checks"], report["blocked_checks"]) == (1, 0), report
+entry, = json.loads(load(f"/v1/demo/collection-quality/history?day={day}&limit=1"))["rows"]
+assert entry["source_key"] == "role-test" and entry["status"] == "ok", entry
 assert b"cdp_stream_observed_events 1" in load("/metrics")
 try:
     PostgresStore(Path("/data"),"postgresql://cdp:cdp-local-only@postgres:5432/cdp").verify_api_reader()

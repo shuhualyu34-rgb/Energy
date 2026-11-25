@@ -74,7 +74,7 @@ class Store:
         migrations = Path(__file__).with_name("migrations")
         upgrade = "".join(
             (migrations / f"postgres_{version:03}.sql").read_text()
-            for version in (3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13)
+            for version in (3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14)
         )
         with self.connect() as connection:
             connection.executescript("BEGIN IMMEDIATE;\n" + SCHEMA + upgrade + "\nCOMMIT;")

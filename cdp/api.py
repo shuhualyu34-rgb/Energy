@@ -6,13 +6,13 @@ from contextlib import asynccontextmanager
 from datetime import date, datetime, timezone
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import AwareDatetime
 
 from .baseline import forecast
-from .collection_quality import collection_quality
+from .collection_quality import collection_quality, daily_quality, quality_history
 from .config import configured_store
 from .dashboard_access import enforce_dashboard_access, load_users, station_scope, visible_stations
 from .metrics import metrics_text
@@ -74,11 +74,37 @@ def prometheus_metrics() -> Response:
     return Response(content, media_type="text/plain; version=0.0.4; charset=utf-8")
 
 
-@app.get("/v1/demo/collection-quality")
-def collection_quality_report(request: Request) -> dict:
+def require_collection_quality_access(request: Request) -> None:
     if station_scope(request) is not None:
         raise HTTPException(403, "collection quality requires unrestricted station access")
+
+
+@app.get("/v1/demo/collection-quality")
+def collection_quality_report(request: Request) -> dict:
+    require_collection_quality_access(request)
     return {"sources": collection_quality(store)}
+
+
+@app.get("/v1/demo/collection-quality/daily")
+def collection_quality_daily(request: Request, day: date) -> dict:
+    require_collection_quality_access(request)
+    try:
+        return daily_quality(store, day)
+    except OverflowError:
+        raise HTTPException(422, "business day is outside the supported range") from None
+
+
+@app.get("/v1/demo/collection-quality/history")
+def collection_quality_history(
+    request: Request, day: date, limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0, le=2**31 - 1),
+) -> dict:
+    require_collection_quality_access(request)
+    try:
+        return {"business_day": day, "limit": limit, "offset": offset,
+                "rows": quality_history(store, day, limit, offset)}
+    except OverflowError:
+        raise HTTPException(422, "business day is outside the supported range") from None
 
 
 @app.get("/v1/demo/station-forecast")
