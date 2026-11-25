@@ -1,6 +1,7 @@
 """Incremental order polling against a read-only billing snapshot."""
 
 import argparse
+import hashlib
 import json
 import sqlite3
 from collections import Counter
@@ -10,9 +11,9 @@ from pathlib import Path
 
 from pydantic import TypeAdapter, ValidationError
 
-from .billing import BillingContractError
+from .billing import BillingContractError, utc
 from .billing_ledger import ingest_billing
-from .collection_quality import CollectionRejected, record_quality
+from .collection_quality import CollectionRejected, RejectedRecord, record_quality
 from .collection_state import CHECKPOINT_FILE, CHECKPOINT_SCHEMA
 from .config import configured_store
 from .contract import Key, Order
@@ -68,7 +69,7 @@ def collect(
         try:
             outcomes = poll(source_uri, store, lower_utc, upper_utc, page_size, source_format)
         except CollectionRejected as error:
-            record_quality(store, checkpoint_id, error.code, error.rule_id)
+            record_quality(store, checkpoint_id, error.code, error.rule_id, rejection=error.record)
             raise
         record_quality(store, checkpoint_id, None)
         state.execute("""
@@ -76,6 +77,38 @@ def collect(
             ON CONFLICT(source_id) DO UPDATE SET through_utc = excluded.through_utc
         """, (checkpoint_id, upper_utc))
     return {"source": source_id, "through_utc": upper_utc, "outcomes": dict(outcomes)}
+
+
+def declared_v1_amount(raw: bytes, position: tuple[str, str, int]) -> int | None:
+    """Read a balanced, source-declared CNY total without treating it as booked revenue."""
+    try:
+        row = json.loads(raw)
+        if not isinstance(row, dict) or not isinstance(row.get("updated_at"), str):
+            return None
+        updated = utc(row["updated_at"]).isoformat(timespec="microseconds")
+    except (ValueError, UnicodeError):
+        return None
+    version = row.get("version")
+    if type(version) is not int or (updated, row.get("order_id"), version) != position:
+        return None
+    if row.get("currency", "CNY") != "CNY":
+        return None
+    total, electricity, service, penalty, discount = amounts = (
+        row.get("total_amount_cents"), row.get("elec_fee_cents"), row.get("service_fee_cents"),
+        row.get("penalty_fee_cents", 0), row.get("discount_amount_cents", 0),
+    )
+    if not all(type(value) is int and 0 <= value <= 2**63 - 1 for value in amounts):
+        return None
+    return total if total == electricity + service + penalty - discount else None
+
+
+def rejected_record(raw: bytes, position: tuple[str, str, int], source_format: str) -> RejectedRecord:
+    cursor = json.dumps(position, separators=(",", ":")).encode()
+    return RejectedRecord(
+        order_ref=hashlib.sha256(position[1].encode()).hexdigest(),
+        record_ref=hashlib.sha256(cursor + b"\0" + raw).hexdigest(),
+        declared_amount_cents=declared_v1_amount(raw, position) if source_format == BILLING_V1 else None,
+    )
 
 
 def poll(
@@ -102,19 +135,32 @@ def poll(
                 return outcomes
             for row in rows:
                 cursor = (row["updated_at"], row["order_id"], row["version"])
+                if source_format == BILLING_V1:
+                    payload = row["payload"]
+                    raw = payload.encode() if isinstance(payload, str) else payload
+                else:
+                    snapshot = {column: row[column] for column in ORDER_COLUMNS}
+                    snapshot["schema_version"] = "0.1"
+                    raw = json.dumps(snapshot, sort_keys=True).encode()
                 try:
                     if source_format == BILLING_V1:
-                        outcome = ingest_billing(store, row["payload"], source_position=cursor)
+                        outcome = ingest_billing(store, raw, source_position=cursor)
                     else:
-                        snapshot = {column: row[column] for column in ORDER_COLUMNS}
-                        snapshot["schema_version"] = "0.1"
-                        outcome = store.ingest(json.dumps(snapshot, sort_keys=True).encode())
+                        outcome = store.ingest(raw)
                 except VersionConflict:
-                    raise CollectionRejected("version_conflict", QualityRule.ORDER_VERSION_CONFLICT) from None
+                    raise CollectionRejected(
+                        "version_conflict", QualityRule.ORDER_VERSION_CONFLICT,
+                        rejected_record(raw, cursor, source_format),
+                    ) from None
                 except BillingContractError as error:
-                    raise CollectionRejected("contract_validation", error.rule_id) from None
+                    raise CollectionRejected(
+                        "contract_validation", error.rule_id, rejected_record(raw, cursor, source_format),
+                    ) from None
                 except ValidationError:
-                    raise CollectionRejected("contract_validation", QualityRule.DEMO_ORDER_CONTRACT) from None
+                    raise CollectionRejected(
+                        "contract_validation", QualityRule.DEMO_ORDER_CONTRACT,
+                        rejected_record(raw, cursor, source_format),
+                    ) from None
                 outcomes[outcome] += 1
 
 

@@ -8,7 +8,9 @@ from unittest.mock import patch
 
 from cdp.billing_ledger import billing_history
 from cdp.collect import BILLING_V1, backfill, collect
-from cdp.collection_quality import collection_quality, daily_quality, quality_history, record_quality
+from cdp.collection_quality import (
+    RejectedRecord, collection_quality, daily_quality, quality_history, record_quality,
+)
 from cdp.metrics import metrics_text
 from cdp.quality_rules import QualityRule
 from cdp.store import Store
@@ -139,8 +141,10 @@ class CollectorTest(unittest.TestCase):
         source = "field-rename"
         first = collect(self.source, self.store, source, times[0], 1, source_format=BILLING_V1)
         self.assertEqual(first["outcomes"], {"inserted": 1})
-        with self.assertRaisesRegex(ValueError, "cutoff unchanged"):
+        with self.assertRaisesRegex(ValueError, "cutoff unchanged") as rejected:
             collect(self.source, self.store, source, times[1], 1, source_format=BILLING_V1)
+        self.assertIsNotNone(rejected.exception.record)
+        self.assertIsNone(rejected.exception.record.declared_amount_cents)
         row, = collection_quality(self.store)
         self.assertEqual((row["status"], row["failure_code"], row["rule_id"]),
                          ("blocked", "contract_validation", "billing_schema"))
@@ -188,6 +192,36 @@ class CollectorTest(unittest.TestCase):
         self.assertEqual(quality_history(self.store, day, limit=1, offset=2), [])
         current = next(row for row in collection_quality(self.store) if row["source_key"] == "source")
         self.assertEqual((current["status"], current["rule_id"]), ("ok", None))
+
+
+    def test_daily_quarantine_deduplicates_and_withholds_ambiguous_amounts(self):
+        self.store.initialize()
+        day = date(2026, 1, 15)
+        observations = (
+            RejectedRecord("order-a", "record-a", 1100),
+            RejectedRecord("order-a", "record-a", 1100),
+            RejectedRecord("order-a", "record-a-v2", 1100),
+            RejectedRecord("order-b", "record-b", 2000),
+            RejectedRecord("order-b", "record-b-v2", 2200),
+            RejectedRecord("order-c", "record-c", None),
+            None,
+        )
+        with patch("cdp.collection_quality.datetime") as clock:
+            clock.now.return_value = datetime(2026, 1, 15, tzinfo=timezone.utc)
+            for rejection in observations:
+                record_quality(self.store, "source", "contract_validation", rejection=rejection)
+
+        report = daily_quality(self.store, day)
+        self.assertEqual(report["blocked_checks"], 7)
+        self.assertEqual(report["quarantine"], {
+            "distinct_orders": 3, "distinct_records": 5,
+            "orders_with_unknown_amount": 2, "known_declared_amount_cents": 1100,
+            "blocked_checks_without_evidence": 1,
+        })
+        history = quality_history(self.store, day, limit=10, offset=0)
+        self.assertEqual(sum(row["has_rejection_evidence"] for row in history), 6)
+        self.assertNotIn("order_ref", history[0])
+        self.assertNotIn("record_ref", history[0])
 
 
 if __name__ == "__main__":

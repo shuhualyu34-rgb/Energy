@@ -96,6 +96,7 @@ with TemporaryDirectory() as directory:
         collect(source_path, Store(store.directory), "tou-rehearsal", second_cutoff, **options)
     except CollectionRejected as error:
         assert (error.code, error.rule_id) == ("contract_validation", "billing_tou_totals")
+        assert error.record.declared_amount_cents == 27900
     else:
         raise AssertionError("Expected the one-cent TOU mismatch to block collection")
     assert export_state(store.directory) == checkpoint

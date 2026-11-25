@@ -18,9 +18,10 @@ dc run --rm -T --no-deps db-access-init python - <<'PY'
 from datetime import datetime, timedelta, timezone
 import json
 from pathlib import Path
+from unittest.mock import patch
 from cdp.billing_event import event_id
 from cdp.billing_ledger import ingest_billing
-from cdp.collection_quality import record_quality
+from cdp.collection_quality import RejectedRecord, record_quality
 from cdp.config import configured_store
 from cdp.stream import observe
 
@@ -39,7 +40,12 @@ event = dict(schema_version="1.0", event_id=event_id(order_id,1,updated), order_
              version=1,updated_at=updated,status="COMPLETED",
              order=dict(station_id="ST_SH_030",end_time="2026-01-14T16:30:00Z"))
 observe(store,order_id.encode(),json.dumps(event).encode())
-record_quality(store,"role-test",None)
+with patch("cdp.collection_quality.datetime") as clock:
+    checked_at = datetime(2026, 1, 15, 4, tzinfo=timezone.utc)
+    clock.now.side_effect = [checked_at, checked_at + timedelta(seconds=1)]
+    record_quality(store, "role-test", "contract_validation",
+                   rejection=RejectedRecord("synthetic-key", "synthetic-record", 1100))
+    record_quality(store, "role-test", None)
 PY
 dc exec -T api python - <<'PY'
 import json
@@ -90,9 +96,14 @@ quality, = json.loads(load("/v1/demo/collection-quality"))["sources"]
 assert quality["source_key"] == "role-test"
 day = datetime.fromisoformat(quality["checked_at_utc"]).astimezone(ZoneInfo("Asia/Shanghai")).date()
 report = json.loads(load(f"/v1/demo/collection-quality/daily?day={day}"))
-assert (report["total_checks"], report["blocked_checks"]) == (1, 0), report
-entry, = json.loads(load(f"/v1/demo/collection-quality/history?day={day}&limit=1"))["rows"]
-assert entry["source_key"] == "role-test" and entry["status"] == "ok", entry
+assert (report["total_checks"], report["blocked_checks"]) == (2, 1), report
+assert report["quarantine"] == {
+    "distinct_orders": 1, "distinct_records": 1, "orders_with_unknown_amount": 0,
+    "known_declared_amount_cents": 1100, "blocked_checks_without_evidence": 0,
+}, report
+blocked, recovered = json.loads(load(f"/v1/demo/collection-quality/history?day={day}&limit=2"))["rows"]
+assert blocked["status"] == "blocked" and blocked["declared_amount_cents"] == 1100, blocked
+assert recovered["source_key"] == "role-test" and recovered["status"] == "ok", recovered
 assert b"cdp_stream_observed_events 1" in load("/metrics")
 try:
     PostgresStore(Path("/data"),"postgresql://cdp:cdp-local-only@postgres:5432/cdp").verify_api_reader()
